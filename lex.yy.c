@@ -348,8 +348,8 @@ static void yynoreturn yy_fatal_error ( const char* msg  );
 	(yy_hold_char) = *yy_cp; \
 	*yy_cp = '\0'; \
 	(yy_c_buf_p) = yy_cp;
-#define YY_NUM_RULES 23
-#define YY_END_OF_BUFFER 24
+#define YY_NUM_RULES 22
+#define YY_END_OF_BUFFER 23
 /* This struct is not used in this scanner,
    but its presence is necessary. */
 struct yy_trans_info
@@ -359,9 +359,9 @@ struct yy_trans_info
 	};
 static const flex_int16_t yy_accept[33] =
     {   0,
-        0,    0,   24,   22,    1,   15,   22,   11,   20,   21,
-       19,   19,   12,    4,    5,    3,    1,    0,    2,   13,
-       19,   19,   16,   17,    7,    9,    8,    6,   14,   18,
+        0,    0,   23,   22,    1,   15,   22,   11,   19,   20,
+       21,   21,   12,    4,    5,    3,    1,    0,    2,   13,
+       21,   21,   16,   17,    7,    9,    8,    6,   14,   18,
        10,    0
     } ;
 
@@ -373,7 +373,7 @@ static const YY_CHAR yy_ec[256] =
         1,    2,    1,    4,    1,    1,    1,    5,    1,    6,
         7,    1,    1,    1,    8,    8,    8,    9,    9,    9,
         9,    9,    9,    9,    9,    9,    9,    1,   10,   11,
-        1,   12,    1,    1,    8,    8,    8,    8,    8,    8,
+        8,   12,    1,    1,    8,    8,    8,    8,    8,    8,
         8,    8,    8,    8,    8,    8,    8,    8,    8,    8,
         8,    8,    8,    8,    8,    8,    8,    8,    8,    8,
         1,    1,    1,    1,    8,    1,    8,    8,    8,    8,
@@ -834,29 +834,24 @@ YY_RULE_SETUP
 case 19:
 YY_RULE_SETUP
 #line 35 "lexer.l"
-{ yylval.str = strdup(yytext); return WORD; }
+{ return '('; }
 	YY_BREAK
 case 20:
 YY_RULE_SETUP
 #line 36 "lexer.l"
-{ return '('; }
+{ return ')'; }
 	YY_BREAK
 case 21:
 YY_RULE_SETUP
 #line 37 "lexer.l"
-{ return ')'; }
+{ yylval.str = strdup(yytext); return WORD; }
 	YY_BREAK
 case 22:
 YY_RULE_SETUP
-#line 38 "lexer.l"
-{ return yytext[0]; }
-	YY_BREAK
-case 23:
-YY_RULE_SETUP
-#line 40 "lexer.l"
+#line 39 "lexer.l"
 ECHO;
 	YY_BREAK
-#line 859 "lex.yy.c"
+#line 854 "lex.yy.c"
 case YY_STATE_EOF(INITIAL):
 	yyterminate();
 
@@ -1857,7 +1852,7 @@ void yyfree (void * ptr )
 
 #define YYTABLES_NAME "yytables"
 
-#line 40 "lexer.l"
+#line 39 "lexer.l"
 
 
 #undef YY_NO_INPUT

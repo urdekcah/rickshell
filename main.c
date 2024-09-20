@@ -103,10 +103,7 @@ static int process_command(const char* input) {
   }
 
   if (strcmp(input, "exit") == 0) return 1;
-
-  int result = parse_and_execute((char*)input);
-  fprintf(result == 0 ? stdout : stderr, 
-      result == 0 ? "Command executed successfully\n" : "Command execution failed\n");
+  parse_and_execute((char*)input);
   return 0;
 }
 

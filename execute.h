@@ -58,7 +58,6 @@ bool add_command(CommandList* list, Command* cmd);
 bool append_command_list(CommandList* dest, CommandList* src);
 void free_command(Command* cmd);
 void free_command_list(CommandList* list);
-void print_command_list(const CommandList* list, int depth);
 void set_pipeline_background(CommandList* list);
 
 bool set_command_user(Command* cmd, uid_t uid, gid_t gid);

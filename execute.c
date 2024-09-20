@@ -100,115 +100,6 @@ bool add_pipeline(Command* cmd, Command* next) {
   return true;
 }
 
-static void print_indent(int depth) {
-  for (int i = 0; i < depth && i < MAX_INDENT; i++) {
-    printf("  ");
-  }
-}
-
-static void print_redirect(const Redirect* redirect, int depth) {
-  print_indent(depth);
-  printf("Redirect:\n");
-  print_indent(depth + 1);
-  printf("type: %d\n", redirect->type);
-  print_indent(depth + 1);
-  printf("fd: %d\n", redirect->fd);
-  print_indent(depth + 1);
-  printf("target: '%s'\n", redirect->target);
-}
-
-static void print_command(const Command* cmd, int depth) {
-  if (cmd == NULL) return;
-  
-  print_indent(depth);
-  printf("Command:\n");
-  print_indent(depth + 1);
-  printf("argc: %d\n", cmd->argc);
-  print_indent(depth + 1);
-  printf("argv: ");
-  for (int i = 0; i < cmd->argc && cmd->argv[i] != NULL; i++) {
-    printf("'%s' ", cmd->argv[i]);
-  }
-  printf("\n");
-
-  print_indent(depth + 1);
-  printf("redirects:\n");
-  for (int i = 0; i < cmd->num_redirects; i++) {
-    print_redirect(&cmd->redirects[i], depth + 2);
-  }
-
-  print_indent(depth + 1);
-  printf("background: %d\n", cmd->background);
-  print_indent(depth + 1);
-  printf("uid: %d\n", cmd->uid);
-  print_indent(depth + 1);
-  printf("gid: %d\n", cmd->gid);
-  print_indent(depth + 1);
-  printf("working_directory: %s\n", cmd->working_directory ? cmd->working_directory : "(not set)");
-  print_indent(depth + 1);
-  printf("umask: %03o\n", cmd->umask);
-
-  print_indent(depth + 1);
-  printf("environment variables:\n");
-  for (int i = 0; i < cmd->num_env_vars; i++) {
-    print_indent(depth + 2);
-    printf("%s\n", cmd->environment[i]);
-  }
-
-  if (cmd->resource_limits_set) {
-    print_indent(depth + 1);
-    printf("resource limits:\n");
-    for (int i = 0; i < RLIMIT_NLIMITS; i++) {
-      print_indent(depth + 2);
-      printf("Resource %d: soft=%lu, hard=%lu\n", i,
-           (unsigned long)cmd->resource_limits[i].rlim_cur,
-           (unsigned long)cmd->resource_limits[i].rlim_max);
-    }
-  }
-
-  if (cmd->subcommand) {
-    print_indent(depth + 1);
-    printf("Subcommand:\n");
-    print_command_list(cmd->subcommand, depth + 2);
-  }
-
-  if (cmd->and_next) {
-    print_indent(depth + 1);
-    printf("AND next command\n");
-  }
-
-  if (cmd->or_next) {
-    print_indent(depth + 1);
-    printf("OR next command\n");
-  }
-
-  if (cmd->next) {
-    print_indent(depth + 1);
-    printf("Piped to:\n");
-    print_command(cmd->next, depth + 2);
-  }
-}
-
-void print_command_list(const CommandList* list, int depth) {
-  if (list == NULL) return;
-  
-  const Command* cmd = list->head;
-  int command_count = 0;
-  
-  while (cmd != NULL) {
-    print_indent(depth);
-    printf("Command %d:\n", command_count + 1);
-    print_command(cmd, depth + 1);
-    
-    cmd = cmd->next;
-    command_count++;
-    
-    if (cmd != NULL) {
-      printf("\n");
-    }
-  }
-}
-
 bool set_command_user(Command* cmd, uid_t uid, gid_t gid) {
   if (cmd == NULL) return false;
   cmd->uid = uid;
@@ -343,12 +234,46 @@ void set_pipeline_background(CommandList* list) {
   }
 }
 
+int execute_command(Command* cmd) {
+  if (cmd == NULL || cmd->argc == 0 || cmd->argv == NULL) {
+    print_error("Invalid command");
+    return -1;
+  }
+
+  pid_t pid = fork();
+
+  if (pid < 0) {
+    fprintf(stderr, "Error: Fork failed (%s)\n", strerror(errno));
+    return -1;
+  } else if (pid == 0) {
+    execvp(cmd->argv[0], cmd->argv);
+        
+    fprintf(stderr, "Error: Command execution failed (%s)\n", strerror(errno));
+    exit(EXIT_FAILURE);
+  } else {
+    if (!cmd->background) {
+      int status;
+      waitpid(pid, &status, 0);
+        
+      if (WIFEXITED(status)) {
+        return WEXITSTATUS(status);
+      } else {
+        print_error("Child process terminated abnormally");
+        return -1;
+      }
+    } else {
+      printf("[%d] %s\n", pid, cmd->argv[0]);
+      return 0;
+    }
+  }
+}
+
 int parse_and_execute(const char* input) {
   if (input == NULL) {
     print_error("Invalid input");
     return -1;
   }
-  
+    
   size_t input_len = strlen(input);
   if (input_len > MAX_INPUT_LENGTH) {
     print_error("Input exceeds maximum allowed length");
@@ -367,13 +292,17 @@ int parse_and_execute(const char* input) {
   command_list = NULL;
   int result = yyparse();
   yylex_destroy();
-  
+    
   free(sanitized_input);
-  
+    
   if (result == 0) {
-    if (command_list != NULL) {
-      printf("Parsed command list:\n");
-      print_command_list(command_list, 1);
+    if (command_list != NULL) {      
+      Command* cmd = command_list->head;
+      while (cmd != NULL) {
+        execute_command(cmd);
+        cmd = cmd->next;
+      }
+      
       free_command_list(command_list);
       command_list = NULL;
     } else {
