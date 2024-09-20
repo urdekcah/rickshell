@@ -234,38 +234,159 @@ void set_pipeline_background(CommandList* list) {
   }
 }
 
-int execute_command(Command* cmd) {
-  if (cmd == NULL || cmd->argc == 0 || cmd->argv == NULL) {
-    print_error("Invalid command");
-    return -1;
+static int handle_redirection(Command* cmd) {
+  for (int i = 0; i < cmd->num_redirects; i++) {
+    Redirect* redir = &cmd->redirects[i];
+    int flags, fd;
+
+    switch (redir->type) {
+      case REDIRECT_INPUT:
+        fd = open(redir->target, O_RDONLY);
+        if (fd == -1) {
+          perror("open");
+          return -1;
+        }
+        if (dup2(fd, STDIN_FILENO) == -1) {
+          perror("dup2");
+          close(fd);
+          return -1;
+        }
+        close(fd);
+        break;
+      case REDIRECT_OUTPUT:
+        flags = O_WRONLY | O_CREAT | O_TRUNC;
+        fd = open(redir->target, flags, 0644);
+        if (fd == -1) {
+          perror("open");
+          return -1;
+        }
+        if (dup2(fd, STDOUT_FILENO) == -1) {
+          perror("dup2");
+          close(fd);
+          return -1;
+        }
+        close(fd);
+        break;
+      case REDIRECT_APPEND:
+        flags = O_WRONLY | O_CREAT | O_APPEND;
+        fd = open(redir->target, flags, 0644);
+        if (fd == -1) {
+          perror("open");
+          return -1;
+        }
+        if (dup2(fd, STDOUT_FILENO) == -1) {
+          perror("dup2");
+          close(fd);
+          return -1;
+        }
+        close(fd);
+        break;
+      case REDIRECT_INPUT_DUP:
+      case REDIRECT_OUTPUT_DUP:
+      case REDIRECT_APPEND_DUP:
+        fd = atoi(redir->target);
+        if (dup2(fd, redir->fd) == -1) {
+          perror("dup2");
+          return -1;
+        }
+        break;
+    }
   }
+  return 0;
+}
 
-  pid_t pid = fork();
+static int execute_pipeline(Command* cmd) {
+  int pipefd[2];
+  pid_t pid;
+  int status = 0;
+  int in_fd = STDIN_FILENO;
 
-  if (pid < 0) {
-    fprintf(stderr, "Error: Fork failed (%s)\n", strerror(errno));
-    return -1;
-  } else if (pid == 0) {
-    execvp(cmd->argv[0], cmd->argv);
-        
-    fprintf(stderr, "Error: Command execution failed (%s)\n", strerror(errno));
-    exit(EXIT_FAILURE);
-  } else {
+  while (cmd != NULL) {
+    if (cmd->next != NULL && pipe(pipefd) == -1) {
+      perror("pipe");
+      return -1;
+    }
+
+    pid = fork();
+    if (pid == 0) {
+      if (in_fd != STDIN_FILENO) {
+        if (dup2(in_fd, STDIN_FILENO) == -1) {
+          perror("dup2");
+          exit(EXIT_FAILURE);
+        }
+        close(in_fd);
+      }
+
+      if (cmd->next != NULL) {
+        close(pipefd[0]);
+        if (dup2(pipefd[1], STDOUT_FILENO) == -1) {
+          perror("dup2");
+          exit(EXIT_FAILURE);
+        }
+        close(pipefd[1]);
+      }
+
+      if (handle_redirection(cmd) == -1) {
+        exit(EXIT_FAILURE);
+      }
+
+      execvp(cmd->argv[0], cmd->argv);
+      perror("execvp");
+      exit(EXIT_FAILURE);
+    } else if (pid < 0) {
+      perror("fork");
+      return -1;
+    }
+
+    if (in_fd != STDIN_FILENO)
+      close(in_fd);
+    
+    if (cmd->next != NULL) {
+      close(pipefd[1]);
+      in_fd = pipefd[0];
+    }
+
     if (!cmd->background) {
-      int status;
       waitpid(pid, &status, 0);
-        
       if (WIFEXITED(status)) {
-        return WEXITSTATUS(status);
+        status = WEXITSTATUS(status);
+        if (status != 0 && cmd->and_next)
+          return status;
+        if (status == 0 && cmd->or_next)
+          return status;
       } else {
-        print_error("Child process terminated abnormally");
+        fprintf(stderr, "Child process terminated abnormally\n");
         return -1;
       }
     } else {
       printf("[%d] %s\n", pid, cmd->argv[0]);
-      return 0;
+    }
+
+    cmd = cmd->next;
+  }
+
+  return status;
+}
+
+int execute_command_list(CommandList* list) {
+  int status = 0;
+  Command* cmd = list->head;
+  
+  while (cmd != NULL) {
+    status = execute_pipeline(cmd);
+    
+    while (cmd != NULL && !cmd->and_next && !cmd->or_next) {
+      cmd = cmd->next;
+    }
+
+    if (cmd != NULL) {
+      if ((cmd->and_next && status != 0) || (cmd->or_next && status == 0)) {
+        cmd = cmd->next;
+      }
     }
   }
+
+  return status;
 }
 
 int parse_and_execute(const char* input) {
@@ -297,11 +418,7 @@ int parse_and_execute(const char* input) {
     
   if (result == 0) {
     if (command_list != NULL) {      
-      Command* cmd = command_list->head;
-      while (cmd != NULL) {
-        execute_command(cmd);
-        cmd = cmd->next;
-      }
+      int status = execute_command_list(command_list);
       
       free_command_list(command_list);
       command_list = NULL;
