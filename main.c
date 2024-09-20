@@ -1,0 +1,153 @@
+#define _XOPEN_SOURCE 700
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <signal.h>
+#include <unistd.h>
+#include <errno.h>
+#include <limits.h>
+#include "execute.h"
+#include "parser.tab.h"
+
+#define INITIAL_BUFFER_SIZE (1 * 1024)  // 1 KB initial size
+#define MAX_BUFFER_SIZE (100 * 1024 * 1024)  // 100 MB limit
+#define MAX_COMMAND_LENGTH 1000  // Maximum length for a single command
+#define BUFFER_GROWTH_FACTOR 1.5
+
+extern int yylex_destroy(void);
+
+static volatile sig_atomic_t keep_running = 1;
+
+static void handle_sigint(int sig) {
+  (void)sig;  // Unused parameter
+  keep_running = 0;
+  const char msg[] = "\nUse 'exit' to quit the shell.\n> ";
+  if (write(STDOUT_FILENO, msg, sizeof(msg) - 1) == -1) {
+    _exit(EXIT_FAILURE);
+  }
+}
+
+static char* get_input(size_t* size) {
+  char* buffer = malloc(INITIAL_BUFFER_SIZE);
+  if (!buffer) {
+    perror("Error allocating memory");
+    return NULL;
+  }
+
+  size_t buffer_size = INITIAL_BUFFER_SIZE;
+  size_t input_length = 0;
+
+  while (1) {
+    size_t remaining = buffer_size - input_length;
+    if (!fgets(buffer + input_length, remaining, stdin)) {
+      if (feof(stdin)) {
+        if (input_length == 0) {
+          free(buffer);
+          return NULL;
+        }
+        break;
+      } else {
+        perror("Error reading input");
+        free(buffer);
+        return NULL;
+      }
+    }
+
+    input_length += strlen(buffer + input_length);
+    if (input_length > 0 && buffer[input_length - 1] == '\n') {
+      buffer[--input_length] = '\0';
+      break;
+    }
+
+    if (input_length == buffer_size - 1) {
+      if (buffer_size >= MAX_BUFFER_SIZE) {
+        fprintf(stderr, "Error: Input too large\n");
+        free(buffer);
+        return NULL;
+      }
+      size_t new_size = (size_t)(buffer_size * BUFFER_GROWTH_FACTOR);
+      if (new_size > MAX_BUFFER_SIZE) {
+        new_size = MAX_BUFFER_SIZE;
+      }
+      char* new_buffer = realloc(buffer, new_size);
+      if (!new_buffer) {
+        perror("Error reallocating memory");
+        free(buffer);
+        return NULL;
+      }
+      buffer = new_buffer;
+      buffer_size = new_size;
+    }
+  }
+
+  *size = input_length;
+  return buffer;
+}
+
+static int setup_signal_handler(void) {
+  struct sigaction sa = {0};
+  sa.sa_handler = handle_sigint;
+  sa.sa_flags = SA_RESTART;
+  
+  if (sigaction(SIGINT, &sa, NULL) == -1) {
+    perror("Error setting up signal handler");
+    return -1;
+  }
+  return 0;
+}
+
+static int process_command(const char* input) {
+  if (strlen(input) > MAX_COMMAND_LENGTH) {
+    fprintf(stderr, "Error: Command too long\n");
+    return -1;
+  }
+
+  if (strcmp(input, "exit") == 0) return 1;
+
+  int result = parse_and_execute((char*)input);
+  fprintf(result == 0 ? stdout : stderr, 
+      result == 0 ? "Command executed successfully\n" : "Command execution failed\n");
+  return 0;
+}
+
+int main(void) {
+  if (setup_signal_handler() == -1) {
+    return EXIT_FAILURE;
+  }
+
+  printf("Rickshell Parser\n");
+  printf("Enter commands (type 'exit' to quit):\n");
+
+  while (keep_running) {
+    printf("> ");
+    fflush(stdout);
+
+    size_t input_size;
+    char* input = get_input(&input_size);
+
+    if (!input) {
+      if (feof(stdin)) {
+        printf("\nEnd of input. Exiting...\n");
+        break;
+      }
+      continue;
+    }
+
+    if (input_size == 0) {
+      free(input);
+      continue;
+    }
+
+    int result = process_command(input);
+    free(input);
+
+    if (result == 1) {
+      printf("Exiting...\n");
+      break;
+    }
+
+    yylex_destroy();
+  }
+
+  return EXIT_SUCCESS;
+}
