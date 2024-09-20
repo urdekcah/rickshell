@@ -6,8 +6,10 @@
 #include <unistd.h>
 #include <errno.h>
 #include <limits.h>
+#include <pwd.h>
 #include "execute.h"
 #include "parser.tab.h"
+#include "color.h"
 
 #define INITIAL_BUFFER_SIZE (1 * 1024)  // 1 KB initial size
 #define MAX_BUFFER_SIZE (100 * 1024 * 1024)  // 100 MB limit
@@ -25,6 +27,68 @@ static void handle_sigint(int sig) {
   if (write(STDOUT_FILENO, msg, sizeof(msg) - 1) == -1) {
     _exit(EXIT_FAILURE);
   }
+}
+
+static char* get_hostname(void) {
+  char* hostname = NULL;
+  long host_name_max = sysconf(_SC_HOST_NAME_MAX);
+  if (host_name_max == -1)
+    host_name_max = _POSIX_HOST_NAME_MAX;
+  hostname = malloc(host_name_max + 1);
+  if (hostname == NULL) {
+    perror("Error allocating memory");
+    return NULL;
+  }
+
+  if (gethostname(hostname, host_name_max + 1) != 0) {
+    perror("Error getting hostname");
+    free(hostname);
+    return NULL;
+  }
+
+  return hostname;
+}
+
+static char* get_username(void) {
+  struct passwd *pw = getpwuid(getuid());
+  if (pw == NULL) {
+    perror("Failed to get username");
+    return NULL;
+  }
+
+  char* username = strdup(pw->pw_name);
+  if (username == NULL) {
+    perror("Failed to allocate memory for username");
+    return NULL;
+  }
+
+  return username;
+}
+
+static char* get_current_directory() {
+  char* cwd = getcwd(NULL, 0);
+  if (cwd == NULL) {
+    perror("Error getting current directory");
+    return NULL;
+  }
+
+  return cwd;
+}
+
+static void print_prompt(void) {
+  char* hostname = get_hostname();
+  char* username = get_username();
+
+  if (hostname && username) {
+    printf(ANSI_COLOR_BOLD_BLUE "%s@%s" ANSI_COLOR_BOLD_BLACK ":" ANSI_COLOR_BOLD_YELLOW "%s" ANSI_COLOR_RESET "$ ", username, hostname, get_current_directory());
+  } else {
+    printf("daniel@fishydino:~$ ");  // Daniel (Elliott): English name of rickroot30
+  }
+
+  fflush(stdout);
+
+  free(hostname);
+  free(username);
 }
 
 static char* get_input(size_t* size) {
@@ -103,10 +167,7 @@ static int process_command(const char* input) {
   }
 
   if (strcmp(input, "exit") == 0) return 1;
-
-  int result = parse_and_execute((char*)input);
-  fprintf(result == 0 ? stdout : stderr, 
-      result == 0 ? "Command executed successfully\n" : "Command execution failed\n");
+  parse_and_execute((char*)input);
   return 0;
 }
 
@@ -115,12 +176,10 @@ int main(void) {
     return EXIT_FAILURE;
   }
 
-  printf("Rickshell Parser\n");
   printf("Enter commands (type 'exit' to quit):\n");
 
   while (keep_running) {
-    printf("> ");
-    fflush(stdout);
+    print_prompt();
 
     size_t input_size;
     char* input = get_input(&input_size);
