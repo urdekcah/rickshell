@@ -39,9 +39,6 @@ Command* create_command(void) {
   cmd->argv.data = (char**)rcalloc(1, sizeof(char*));
   cmd->argv.capacity = 1;
   cmd->argv.size = 0;
-  cmd->uid = getuid();
-  cmd->gid = getgid();
-  cmd->umask = 022;
   return cmd;
 }
 
@@ -95,61 +92,7 @@ bool add_pipeline(Command* cmd, Command* next) {
     last = last->next;
   }
   last->next = next;
-  return true;
-}
-
-bool set_command_user(Command* cmd, uid_t uid, gid_t gid) {
-  if (cmd == NULL) return false;
-  cmd->uid = uid;
-  cmd->gid = gid;
-  return true;
-}
-
-bool set_command_working_directory(Command* cmd, const char* directory) {
-  if (cmd == NULL || directory == NULL) return false;
-  
-  char* new_dir = strdup(directory);
-  if (new_dir == NULL) {
-    print_error("Memory allocation failed");
-    return false;
-  }
-  
-  free(cmd->working_directory);
-  cmd->working_directory = new_dir;
-  return true;
-}
-
-bool add_environment_variable(Command* cmd, const char* name, const char* value) {
-  if (cmd == NULL || name == NULL || value == NULL) return false;
-  
-  size_t len = strlen(name) + strlen(value) + 2;
-  char* env_var = rmalloc(len);
-  
-  snprintf(env_var, len, "%s=%s", name, value);
-  
-  cmd->environment = rrealloc(cmd->environment, sizeof(char*) * (cmd->num_env_vars + 1));
-  cmd->environment[cmd->num_env_vars++] = env_var;
-  
-  return true;
-}
-
-void set_command_umask(Command* cmd, mode_t umask) {
-  if (cmd == NULL) return;
-  cmd->umask = umask;
-}
-
-bool set_resource_limit(Command* cmd, int resource, const struct rlimit* rlim) {
-  if (cmd == NULL || rlim == NULL || resource < 0 || resource >= RLIMIT_NLIMITS) return false;
-  
-  if (!cmd->resource_limits_set) {
-    cmd->resource_limits = rcalloc(RLIMIT_NLIMITS, sizeof(struct rlimit));
-    if (cmd->resource_limits == NULL) {
-      print_error("Memory allocation failed");
-      return false;
-    }
-    cmd->resource_limits_set = true;
-  }
-  memcpy(&cmd->resource_limits[resource], rlim, sizeof(struct rlimit));
+  last->pipline_next = true;
   return true;
 }
 
@@ -199,13 +142,6 @@ void free_command(Command* cmd) {
   for (size_t i = 0; i < cmd->redirects.size; i++)
     free(cmd->redirects.data[i].target);
   free(cmd->redirects.data);
-  free(cmd->working_directory);
-  for (int i = 0; i < cmd->num_env_vars; i++)
-    free(cmd->environment[i]);
-  free(cmd->environment);
-  free(cmd->resource_limits);
-  if (cmd->subcommand)
-    free_command_list(cmd->subcommand);
   memset(cmd, 0, sizeof(Command));
   free(cmd);
 }

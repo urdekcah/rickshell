@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS=-Wall -Wextra -g
+CFLAGS=-Wall -Wextra
 LDFLAGS=
 
 SRCS=main.c error.c execute.c expr.c parser.tab.c lex.yy.c memory.c pipeline.c redirect.c
@@ -9,10 +9,10 @@ TARGET=rickshell
 all: $(TARGET)
 
 $(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -g
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 %.o: %.c
-	$(CC) $(CFLAGS) -c $< -g
+	$(CC) $(CFLAGS) -c $<
 
 clean:
 	rm -f $(OBJS) $(TARGET)

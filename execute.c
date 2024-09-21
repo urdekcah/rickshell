@@ -3,6 +3,8 @@
 #include <string.h>
 #include <unistd.h>
 #include <ctype.h>
+#include <fcntl.h>
+#include <sys/wait.h>
 #include "expr.h"
 #include "pipeline.h"
 #include "redirect.h"
@@ -11,31 +13,60 @@
 #include "error.h"
 
 extern int yyparse(void);
-extern void yylex_destroy(void);
+extern int yylex_destroy(void);
 extern void yy_scan_string(const char *str);
 
 #define MAX_INPUT_LENGTH 4096
 
 extern CommandList* command_list;
 
+int execute_command(Command* cmd) {
+  pid_t pid;
+  int status;
+
+  pid = fork();
+  if (pid == 0) {
+    if (handle_redirection(cmd) == -1) {
+      exit(1);
+    }
+
+    execvp(cmd->argv.data[0], cmd->argv.data);
+    perror("execvp failed");
+    exit(127);
+  } else if (pid > 0) {
+    waitpid(pid, &status, 0);
+
+    if (WIFEXITED(status)) {
+      return WEXITSTATUS(status);
+    } else if (WIFSIGNALED(status)) {
+      fprintf(stderr, "Command terminated by signal %d\n", WTERMSIG(status));
+      return 128 + WTERMSIG(status);
+    }
+  } else {
+    perror("fork failed");
+    return -1;
+  }
+
+  return -1;
+}
+
 int execute_command_list(CommandList* list) {
   int status = 0;
   Command* cmd = list->head;
-  
+
   while (cmd != NULL) {
-    status = execute_pipeline(cmd);
-    
-    while (cmd != NULL && !cmd->and_next && !cmd->or_next) {
-      cmd = cmd->next;
-    }
-
-    if (cmd != NULL) {
-      if ((cmd->and_next && status != 0) || (cmd->or_next && status == 0)) {
+    if (cmd->pipline_next) {
+      status = execute_pipeline(cmd);
+      while (cmd != NULL && cmd->pipline_next)
         cmd = cmd->next;
-      }
+    } else {
+      status = execute_command(cmd);
+      if (status != 0 && cmd->and_next)
+        break;
     }
+    cmd = cmd->next;
   }
-
+  
   return status;
 }
 

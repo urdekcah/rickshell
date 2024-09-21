@@ -6,75 +6,65 @@
 #include "redirect.h"
 #include "pipeline.h"
 
-int execute_pipeline(Command* cmd) {
-  int pipefd[2];
+int execute_pipeline(Command* first_cmd) {
+  int pipefd[2], status = 0;
+  Command* cmd = first_cmd;
   pid_t pid;
-  int status = 0;
-  int in_fd = STDIN_FILENO;
+  int prev_fd = -1;
 
-  while (cmd != NULL) {
-    if (cmd->next != NULL && pipe(pipefd) == -1) {
-      perror("pipe");
-      return -1;
-    }
-
+  while (cmd != NULL && cmd->pipline_next) {
+    pipe(pipefd);
     pid = fork();
-    if (pid == 0) {
-      if (in_fd != STDIN_FILENO) {
-        if (dup2(in_fd, STDIN_FILENO) == -1) {
-          perror("dup2");
-          exit(EXIT_FAILURE);
-        }
-        close(in_fd);
-      }
 
-      if (cmd->next != NULL) {
-        close(pipefd[0]);
-        if (dup2(pipefd[1], STDOUT_FILENO) == -1) {
-          perror("dup2");
-          exit(EXIT_FAILURE);
-        }
-        close(pipefd[1]);
+    if (pid == 0) {
+      if (prev_fd != -1) {
+        dup2(prev_fd, STDIN_FILENO);
+        close(prev_fd);
       }
+      dup2(pipefd[1], STDOUT_FILENO);
+      close(pipefd[0]);
+      close(pipefd[1]);
 
       if (handle_redirection(cmd) == -1) {
-        exit(EXIT_FAILURE);
+        exit(1);
       }
-
       execvp(cmd->argv.data[0], cmd->argv.data);
-      perror("execvp");
-      exit(EXIT_FAILURE);
-    } else if (pid < 0) {
-      perror("fork");
+      perror("execvp failed in pipeline");
+      exit(1);
+    } else if (pid > 0) {
+      close(pipefd[1]);
+      if (prev_fd != -1) {
+        close(prev_fd);
+      }
+      prev_fd = pipefd[0];
+      cmd = cmd->next;
+    } else {
+      perror("fork failed in pipeline");
       return -1;
     }
-
-    if (in_fd != STDIN_FILENO)
-      close(in_fd);
-    
-    if (cmd->next != NULL) {
-      close(pipefd[1]);
-      in_fd = pipefd[0];
-    }
-
-    if (!cmd->background) {
-      waitpid(pid, &status, 0);
-      if (WIFEXITED(status)) {
-        status = WEXITSTATUS(status);
-        if (status != 0 && cmd->and_next)
-          return status;
-        if (status == 0 && cmd->or_next)
-          return status;
-      } else {
-        fprintf(stderr, "Child process terminated abnormally\n");
-        return -1;
-      }
-    } else {
-      printf("[%d] %s\n", pid, cmd->argv.data[0]);
-    }
-
-    cmd = cmd->next;
   }
 
-  return status;
+  if (cmd != NULL) {
+    pid = fork();
+    if (pid == 0) {
+      if (prev_fd != -1) {
+        dup2(prev_fd, STDIN_FILENO);
+        close(prev_fd);
+      }
+      if (handle_redirection(cmd) == -1) {
+        exit(1);
+      }
+      execvp(cmd->argv.data[0], cmd->argv.data);
+      perror("execvp failed in pipeline");
+      exit(1);
+    } else if (pid > 0) {
+      close(prev_fd);
+      waitpid(pid, &status, 0);
+    } else {
+      perror("fork failed in last pipeline command");
+      return -1;
+    }
+  }
+
+  return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
 }

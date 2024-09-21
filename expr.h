@@ -20,17 +20,11 @@ typedef struct Command {
   } redirects;
   bool background;
   struct Command* next;
-  struct CommandList* subcommand;
   bool and_next;
   bool or_next;
-  uid_t uid;
-  gid_t gid;
-  char* working_directory;
-  char** environment;
-  int num_env_vars;
-  mode_t umask;
-  bool resource_limits_set;
-  struct rlimit* resource_limits;
+  bool semi_next;
+  bool pipline_next;
+  bool is_subcommand;
 } Command;
 
 typedef struct CommandList {
@@ -48,10 +42,4 @@ bool append_command_list(CommandList* dest, CommandList* src);
 void free_command(Command* cmd);
 void free_command_list(CommandList* list);
 void set_pipeline_background(CommandList* list);
-
-bool set_command_user(Command* cmd, uid_t uid, gid_t gid);
-bool set_command_working_directory(Command* cmd, const char* directory);
-bool add_environment_variable(Command* cmd, const char* name, const char* value);
-void set_command_umask(Command* cmd, mode_t umask);
-bool set_resource_limit(Command* cmd, int resource, const struct rlimit* rlim);
 #endif /* __RICKSHELL_EXPR_H__ */
