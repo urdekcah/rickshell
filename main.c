@@ -185,6 +185,7 @@ int main(void) {
   printf("Enter commands (type 'exit' to quit):\n");
 
   while (keep_running) {
+    print_job_status();
     print_prompt();
 
     size_t input_size;

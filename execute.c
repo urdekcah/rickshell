@@ -50,9 +50,79 @@ int execute_command(Command* cmd) {
   return -1;
 }
 
+char* command_list_to_string(CommandList* list) {
+  if (list == NULL || list->head == NULL) {
+    return NULL;
+  }
+
+  size_t total_length = 0;
+  Command* cmd = list->head;
+
+  while (cmd != NULL) {
+    for (int i = 0; cmd->argv.data[i] != NULL; i++) {
+      total_length += strlen(cmd->argv.data[i]) + 1;
+    }
+    if (cmd->next != NULL) {
+      if (cmd->and_next) {
+        total_length += 4;
+      } else if (cmd->or_next) {
+        total_length += 4;
+      } else if (cmd->semi_next) {
+        total_length += 2;
+      } else {
+        total_length += 3;
+      }
+    }
+    cmd = cmd->next;
+  }
+
+  char* result = (char*)malloc(total_length + 1);
+  if (result == NULL) {
+    perror("malloc");
+    return NULL;
+  }
+  result[0] = '\0';
+
+  cmd = list->head;
+  while (cmd != NULL) {
+    for (int i = 0; cmd->argv.data[i] != NULL; i++) {
+      strcat(result, cmd->argv.data[i]);
+      if (cmd->argv.data[i + 1] != NULL) {
+        strcat(result, " ");
+      }
+    }
+    if (cmd->next != NULL) {
+      if (cmd->and_next) {
+        strcat(result, " && ");
+      } else if (cmd->or_next) {
+        strcat(result, " || ");
+      } else if (cmd->semi_next) {
+        strcat(result, "; ");
+      } else {
+        strcat(result, " | ");
+      }
+    }
+    cmd = cmd->next;
+  }
+
+  return result;
+}
+
 int execute_command_list(CommandList* list) {
   int status = 0;
   Command* cmd = list->head;
+
+  bool background = false;
+  Command* last_cmd = list->tail;
+  if (last_cmd && last_cmd->background) {
+    background = true;
+    last_cmd->background = false;
+  }
+
+  if (background) {
+    char* command_line = command_list_to_string(list);
+    return execute_background_job(list, command_line);
+  }
 
   while (cmd != NULL) {
     if (cmd->pipline_next) {
