@@ -7,9 +7,11 @@
 #include <errno.h>
 #include <limits.h>
 #include <pwd.h>
+#include "expr.h"
 #include "execute.h"
 #include "parser.tab.h"
 #include "color.h"
+#include "memory.h"
 
 #define INITIAL_BUFFER_SIZE (1 * 1024)  // 1 KB initial size
 #define MAX_BUFFER_SIZE (100 * 1024 * 1024)  // 100 MB limit
@@ -21,7 +23,7 @@ extern int yylex_destroy(void);
 static volatile sig_atomic_t keep_running = 1;
 
 static void handle_sigint(int sig) {
-  (void)sig;  // Unused parameter
+  (void)sig;  // Unused parameter 
   keep_running = 0;
   const char msg[] = "\nUse 'exit' to quit the shell.\n> ";
   if (write(STDOUT_FILENO, msg, sizeof(msg) - 1) == -1) {
@@ -34,7 +36,7 @@ static char* get_hostname(void) {
   long host_name_max = sysconf(_SC_HOST_NAME_MAX);
   if (host_name_max == -1)
     host_name_max = _POSIX_HOST_NAME_MAX;
-  hostname = malloc(host_name_max + 1);
+  hostname = rmalloc(host_name_max + 1);
   if (hostname == NULL) {
     perror("Error allocating memory");
     return NULL;
@@ -46,7 +48,9 @@ static char* get_hostname(void) {
     return NULL;
   }
 
-  return hostname;
+  char* copy = strdup(hostname);
+  free(hostname);
+  return copy;
 }
 
 static char* get_username(void) {
@@ -78,9 +82,10 @@ static char* get_current_directory() {
 static void print_prompt(void) {
   char* hostname = get_hostname();
   char* username = get_username();
+  char* cwd = get_current_directory();
 
-  if (hostname && username) {
-    printf(ANSI_COLOR_BOLD_BLUE "%s@%s" ANSI_COLOR_BOLD_BLACK ":" ANSI_COLOR_BOLD_YELLOW "%s" ANSI_COLOR_RESET "$ ", username, hostname, get_current_directory());
+  if (hostname && username && cwd) {
+    printf(ANSI_COLOR_BOLD_BLUE "%s@%s" ANSI_COLOR_BOLD_BLACK ":" ANSI_COLOR_BOLD_YELLOW "%s" ANSI_COLOR_RESET "$ ", username, hostname, cwd);
   } else {
     printf("daniel@fishydino:~$ ");  // Daniel (Elliott): English name of rickroot30
   }
@@ -89,10 +94,11 @@ static void print_prompt(void) {
 
   free(hostname);
   free(username);
+  free(cwd);
 }
 
 static char* get_input(size_t* size) {
-  char* buffer = malloc(INITIAL_BUFFER_SIZE);
+  char* buffer = rmalloc(INITIAL_BUFFER_SIZE);
   if (!buffer) {
     perror("Error allocating memory");
     return NULL;

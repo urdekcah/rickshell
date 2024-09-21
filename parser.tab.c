@@ -72,7 +72,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include "execute.h"
+#include "rick.h"
+#include "expr.h"
+#include "redirect.h"
+#include "pipeline.h"
 
 extern int yylex();
 extern char* yytext;
@@ -82,7 +85,7 @@ void yyerror(const char* s);
 Command* current_command = NULL;
 CommandList* command_list = NULL;
 
-#line 86 "parser.tab.c"
+#line 89 "parser.tab.c"
 
 # ifndef YY_CAST
 #  ifdef __cplusplus
@@ -153,14 +156,14 @@ extern int yydebug;
 #if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
 union YYSTYPE
 {
-#line 17 "parser.y"
+#line 20 "parser.y"
 
     char* str;
     int num;
     Command* cmd;
     CommandList* cmd_list;
 
-#line 164 "parser.tab.c"
+#line 167 "parser.tab.c"
 
 };
 typedef union YYSTYPE YYSTYPE;
@@ -537,10 +540,10 @@ static const yytype_int8 yytranslate[] =
   /* YYRLINE[YYN] -- Source line where rule number YYN was defined.  */
 static const yytype_uint8 yyrline[] =
 {
-       0,    37,    37,    38,    41,    49,    58,    66,    77,    78,
-      81,    86,    92,   100,   101,   108,   109,   116,   121,   126,
-     131,   138,   139,   142,   143,   144,   145,   148,   155,   168,
-     177,   184,   191,   198,   205,   212,   220,   227,   234,   241
+       0,    40,    40,    41,    44,    52,    61,    69,    80,    81,
+      84,    89,    95,   103,   104,   111,   112,   119,   124,   129,
+     134,   141,   142,   145,   146,   147,   148,   151,   158,   171,
+     180,   187,   194,   201,   208,   215,   223,   230,   237,   244
 };
 #endif
 
@@ -1368,7 +1371,7 @@ yyreduce:
   switch (yyn)
     {
   case 4:
-#line 42 "parser.y"
+#line 45 "parser.y"
     {
         if (command_list == NULL) {
             command_list = (yyvsp[-1].cmd_list);
@@ -1376,11 +1379,11 @@ yyreduce:
             append_command_list(command_list, (yyvsp[-1].cmd_list));
         }
     }
-#line 1380 "parser.tab.c"
+#line 1383 "parser.tab.c"
     break;
 
   case 5:
-#line 50 "parser.y"
+#line 53 "parser.y"
     {
         set_pipeline_background((yyvsp[-2].cmd_list));
         if (command_list == NULL) {
@@ -1389,11 +1392,11 @@ yyreduce:
             append_command_list(command_list, (yyvsp[-2].cmd_list));
         }
     }
-#line 1393 "parser.tab.c"
+#line 1396 "parser.tab.c"
     break;
 
   case 6:
-#line 59 "parser.y"
+#line 62 "parser.y"
     {
         if (command_list == NULL) {
             command_list = (yyvsp[0].cmd_list);
@@ -1401,11 +1404,11 @@ yyreduce:
             append_command_list(command_list, (yyvsp[0].cmd_list));
         }
     }
-#line 1405 "parser.tab.c"
+#line 1408 "parser.tab.c"
     break;
 
   case 7:
-#line 67 "parser.y"
+#line 70 "parser.y"
     {
         set_pipeline_background((yyvsp[-1].cmd_list));
         if (command_list == NULL) {
@@ -1414,105 +1417,105 @@ yyreduce:
             append_command_list(command_list, (yyvsp[-1].cmd_list));
         }
     }
-#line 1418 "parser.tab.c"
+#line 1421 "parser.tab.c"
     break;
 
   case 10:
-#line 82 "parser.y"
+#line 85 "parser.y"
             {
                 (yyval.cmd_list) = create_command_list();
                 add_command((yyval.cmd_list), (yyvsp[0].cmd));
             }
-#line 1427 "parser.tab.c"
+#line 1430 "parser.tab.c"
     break;
 
   case 11:
-#line 87 "parser.y"
+#line 90 "parser.y"
             {
                 (yyvsp[-2].cmd_list)->tail->and_next = 1;  // Set and_next flag for the last command of the previous list
                 add_command((yyvsp[-2].cmd_list), (yyvsp[0].cmd));
                 (yyval.cmd_list) = (yyvsp[-2].cmd_list);
             }
-#line 1437 "parser.tab.c"
+#line 1440 "parser.tab.c"
     break;
 
   case 12:
-#line 93 "parser.y"
+#line 96 "parser.y"
             {
                 (yyvsp[-2].cmd_list)->tail->or_next = 1;  // Set or_next flag for the last command of the previous list
                 add_command((yyvsp[-2].cmd_list), (yyvsp[0].cmd));
                 (yyval.cmd_list) = (yyvsp[-2].cmd_list);
             }
-#line 1447 "parser.tab.c"
+#line 1450 "parser.tab.c"
     break;
 
   case 14:
-#line 102 "parser.y"
+#line 105 "parser.y"
         {
             add_pipeline((yyvsp[-2].cmd), (yyvsp[0].cmd));
             (yyval.cmd) = (yyvsp[-2].cmd);
         }
-#line 1456 "parser.tab.c"
+#line 1459 "parser.tab.c"
     break;
 
   case 16:
-#line 110 "parser.y"
+#line 113 "parser.y"
        {
             (yyval.cmd) = create_command();
             (yyval.cmd)->subcommand = (yyvsp[-1].cmd_list);
        }
-#line 1465 "parser.tab.c"
+#line 1468 "parser.tab.c"
     break;
 
   case 17:
-#line 117 "parser.y"
+#line 120 "parser.y"
                {
                    (yyval.cmd) = current_command;
                    current_command = NULL;
                }
-#line 1474 "parser.tab.c"
+#line 1477 "parser.tab.c"
     break;
 
   case 18:
-#line 122 "parser.y"
+#line 125 "parser.y"
                {
                    (yyval.cmd) = current_command;
                    current_command = NULL;
                }
-#line 1483 "parser.tab.c"
+#line 1486 "parser.tab.c"
     break;
 
   case 19:
-#line 127 "parser.y"
+#line 130 "parser.y"
                {
                    (yyval.cmd) = current_command;
                    current_command = NULL;
                }
-#line 1492 "parser.tab.c"
+#line 1495 "parser.tab.c"
     break;
 
   case 20:
-#line 132 "parser.y"
+#line 135 "parser.y"
                {
                    (yyval.cmd) = current_command;
                    current_command = NULL;
                }
-#line 1501 "parser.tab.c"
+#line 1504 "parser.tab.c"
     break;
 
   case 27:
-#line 149 "parser.y"
+#line 152 "parser.y"
    {
        if (current_command == NULL) {
            current_command = create_command();
        }
        add_argument(current_command, (yyvsp[0].str));
    }
-#line 1512 "parser.tab.c"
+#line 1515 "parser.tab.c"
     break;
 
   case 28:
-#line 156 "parser.y"
+#line 159 "parser.y"
    {
        if (current_command == NULL) {
            current_command = create_command();
@@ -1523,77 +1526,77 @@ yyreduce:
        add_argument(current_command, unquoted);
        free(unquoted);
    }
-#line 1527 "parser.tab.c"
+#line 1530 "parser.tab.c"
     break;
 
   case 29:
-#line 169 "parser.y"
+#line 172 "parser.y"
         {
             if (current_command == NULL) {
                 current_command = create_command();
             }
             add_argument(current_command, (yyvsp[0].str));
         }
-#line 1538 "parser.tab.c"
+#line 1541 "parser.tab.c"
     break;
 
   case 30:
-#line 178 "parser.y"
+#line 181 "parser.y"
            {
                if (current_command == NULL) {
                    current_command = create_command();
                }
                add_redirect(current_command, REDIRECT_INPUT, STDIN_FILENO, (yyvsp[0].str));
            }
-#line 1549 "parser.tab.c"
+#line 1552 "parser.tab.c"
     break;
 
   case 31:
-#line 185 "parser.y"
+#line 188 "parser.y"
            {
                if (current_command == NULL) {
                    current_command = create_command();
                }
                add_redirect(current_command, REDIRECT_INPUT_DUP, STDIN_FILENO, (yyvsp[0].str));
            }
-#line 1560 "parser.tab.c"
+#line 1563 "parser.tab.c"
     break;
 
   case 32:
-#line 192 "parser.y"
+#line 195 "parser.y"
            {
                if (current_command == NULL) {
                    current_command = create_command();
                }
                add_redirect(current_command, REDIRECT_OUTPUT, STDOUT_FILENO, (yyvsp[0].str));
            }
-#line 1571 "parser.tab.c"
+#line 1574 "parser.tab.c"
     break;
 
   case 33:
-#line 199 "parser.y"
+#line 202 "parser.y"
            {
                if (current_command == NULL) {
                    current_command = create_command();
                }
                add_redirect(current_command, REDIRECT_OUTPUT_DUP, STDOUT_FILENO, (yyvsp[0].str));
            }
-#line 1582 "parser.tab.c"
+#line 1585 "parser.tab.c"
     break;
 
   case 34:
-#line 206 "parser.y"
+#line 209 "parser.y"
            {
                if (current_command == NULL) {
                    current_command = create_command();
                }
                add_redirect(current_command, REDIRECT_APPEND, STDOUT_FILENO, (yyvsp[0].str));
            }
-#line 1593 "parser.tab.c"
+#line 1596 "parser.tab.c"
     break;
 
   case 35:
-#line 213 "parser.y"
+#line 216 "parser.y"
            {
                if (current_command == NULL) {
                    current_command = create_command();
@@ -1601,55 +1604,55 @@ yyreduce:
                add_redirect(current_command, REDIRECT_INPUT, STDIN_FILENO, (yyvsp[0].str));
                add_redirect(current_command, REDIRECT_OUTPUT, STDOUT_FILENO, (yyvsp[0].str));
            }
-#line 1605 "parser.tab.c"
+#line 1608 "parser.tab.c"
     break;
 
   case 36:
-#line 221 "parser.y"
+#line 224 "parser.y"
            {
                if (current_command == NULL) {
                    current_command = create_command();
                }
                add_redirect(current_command, REDIRECT_APPEND_DUP, STDOUT_FILENO, (yyvsp[0].str));
            }
-#line 1616 "parser.tab.c"
+#line 1619 "parser.tab.c"
     break;
 
   case 37:
-#line 228 "parser.y"
+#line 231 "parser.y"
            {
                if (current_command == NULL) {
                    current_command = create_command();
                }
                add_redirect(current_command, REDIRECT_INPUT, (yyvsp[-2].num), (yyvsp[0].str));
            }
-#line 1627 "parser.tab.c"
+#line 1630 "parser.tab.c"
     break;
 
   case 38:
-#line 235 "parser.y"
+#line 238 "parser.y"
            {
                if (current_command == NULL) {
                    current_command = create_command();
                }
                add_redirect(current_command, REDIRECT_OUTPUT, (yyvsp[-2].num), (yyvsp[0].str));
            }
-#line 1638 "parser.tab.c"
+#line 1641 "parser.tab.c"
     break;
 
   case 39:
-#line 242 "parser.y"
+#line 245 "parser.y"
            {
                if (current_command == NULL) {
                    current_command = create_command();
                }
                add_redirect(current_command, REDIRECT_APPEND, (yyvsp[-2].num), (yyvsp[0].str));
            }
-#line 1649 "parser.tab.c"
+#line 1652 "parser.tab.c"
     break;
 
 
-#line 1653 "parser.tab.c"
+#line 1656 "parser.tab.c"
 
       default: break;
     }
@@ -1881,7 +1884,7 @@ yyreturn:
 #endif
   return yyresult;
 }
-#line 250 "parser.y"
+#line 253 "parser.y"
 
 
 void yyerror(const char* s) {
