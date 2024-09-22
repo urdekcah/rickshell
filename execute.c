@@ -145,7 +145,7 @@ int parse_and_execute(const char* input) {
     print_error("Invalid input");
     return -1;
   }
-    
+  
   size_t input_len = strlen(input);
   if (input_len > MAX_INPUT_LENGTH) {
     print_error("Input exceeds maximum allowed length");
@@ -160,24 +160,48 @@ int parse_and_execute(const char* input) {
   }
   sanitized_input[sanitized_len] = '\0';
 
-  yy_scan_string(sanitized_input);
-  command_list = NULL;
-  int result = yyparse();
-  yylex_destroy();
-    
-  free(sanitized_input);
-    
-  if (result == 0) {
-    if (command_list != NULL) {      
-      int status = execute_command_list(command_list);
-      (void)status;
-      free_command_list(command_list);
+  char* saveptr;
+  char* cmd = strtok_r(sanitized_input, ";", &saveptr);
+  int result = 0;
+
+  while (cmd != NULL) {
+    while (isspace(*cmd)) cmd++;
+    if (*cmd != '\0') {
+      yy_scan_string(cmd);
       command_list = NULL;
-    } else {
-      printf("No commands to execute\n");
+      result = yyparse();
+      yylex_destroy();
+      
+      if (result == 0) {
+        if (command_list != NULL) {
+          bool background = false;
+          Command* last_cmd = command_list->tail;
+          if (last_cmd && last_cmd->background) {
+            background = true;
+            last_cmd->background = false;
+          }
+
+          if (background) {
+            char* command_line = command_list_to_string(command_list);
+            execute_background_job(command_list, command_line);
+            free(command_line);
+          } else {
+            int status = execute_command_list(command_list);
+            (void)status;
+          }
+          free_command_list(command_list);
+          command_list = NULL;
+        } else {
+          printf("No commands to execute\n");
+        }
+      } else {
+        printf("Failed to parse the command\n");
+        break;
+      }
     }
-  } else {
-    printf("Failed to parse the command\n");
+    cmd = strtok_r(NULL, ";", &saveptr);
   }
+  
+  free(sanitized_input);
   return result;
 }

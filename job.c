@@ -63,6 +63,11 @@ void remove_job(Job* job) {
 
       free(job->command_line);
       free(job);
+
+      if (!job_list.first_job) {
+        job_list.next_job_id = 1;
+      }
+
       return;
     }
 
