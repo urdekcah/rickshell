@@ -144,3 +144,13 @@ void rfree(void* ptr) {
     free(ptr);
   #endif
 }
+
+char *rstrdup(const char *src) {
+  size_t len = strlen(src) + 1;
+  char *dst = rmalloc(len);
+  if (dst == NULL) {
+    return NULL;
+  }
+  memcpy(dst, src, len);
+  return dst;
+}

@@ -12,6 +12,8 @@
 #include "parser.tab.h"
 #include "color.h"
 #include "memory.h"
+#include "file.h"
+#include "log.h"
 
 #define INITIAL_BUFFER_SIZE (1 * 1024)  // 1 KB initial size
 #define MAX_BUFFER_SIZE (100 * 1024 * 1024)  // 100 MB limit
@@ -44,12 +46,12 @@ static char* get_hostname(void) {
 
   if (gethostname(hostname, host_name_max + 1) != 0) {
     perror("Error getting hostname");
-    free(hostname);
+    rfree(hostname);
     return NULL;
   }
 
   char* copy = strdup(hostname);
-  free(hostname);
+  rfree(hostname);
   return copy;
 }
 
@@ -92,9 +94,9 @@ static void print_prompt(void) {
 
   fflush(stdout);
 
-  free(hostname);
-  free(username);
-  free(cwd);
+  rfree(hostname);
+  rfree(username);
+  rfree(cwd);
 }
 
 static char* get_input(size_t* size) {
@@ -112,13 +114,13 @@ static char* get_input(size_t* size) {
     if (!fgets(buffer + input_length, remaining, stdin)) {
       if (feof(stdin)) {
         if (input_length == 0) {
-          free(buffer);
+          rfree(buffer);
           return NULL;
         }
         break;
       } else {
         perror("Error reading input");
-        free(buffer);
+        rfree(buffer);
         return NULL;
       }
     }
@@ -132,17 +134,17 @@ static char* get_input(size_t* size) {
     if (input_length == buffer_size - 1) {
       if (buffer_size >= MAX_BUFFER_SIZE) {
         fprintf(stderr, "Error: Input too large\n");
-        free(buffer);
+        rfree(buffer);
         return NULL;
       }
       size_t new_size = (size_t)(buffer_size * BUFFER_GROWTH_FACTOR);
       if (new_size > MAX_BUFFER_SIZE) {
         new_size = MAX_BUFFER_SIZE;
       }
-      char* new_buffer = realloc(buffer, new_size);
+      char* new_buffer = rrealloc(buffer, new_size);
       if (!new_buffer) {
         perror("Error reallocating memory");
-        free(buffer);
+        rfree(buffer);
         return NULL;
       }
       buffer = new_buffer;
@@ -178,11 +180,26 @@ static int process_command(const char* input) {
 }
 
 int main(void) {
+  ensure_directory_exist("~/.rickshell");
   if (setup_signal_handler() == -1) {
     return EXIT_FAILURE;
   }
 
+  LogConfig config = {
+    .name = "rickshell",
+    .level = LOG_LEVEL_INFO,
+    .color_output = true,
+    .filename = "~/.rickshell/rickshell.log",
+    .max_file_size = 10 * 1024 * 1024,  // 10 MB
+    .max_backup_files = 10,
+    .append_mode = true,
+    .file_output_only = true,
+    .log_format = "[%Y-%M-%d %H:%M:%S] [%L] [%p] (%a) %f:%l (%n): %m"
+  };
+  log_init(&config);
+
   printf("Enter commands (type 'exit' to quit):\n");
+  log_info("Shell started");
 
   while (keep_running) {
     print_job_status();
@@ -200,12 +217,12 @@ int main(void) {
     }
 
     if (input_size == 0) {
-      free(input);
+      rfree(input);
       continue;
     }
 
     int result = process_command(input);
-    free(input);
+    rfree(input);
 
     if (result == 1) {
       printf("Exiting...\n");
@@ -214,6 +231,8 @@ int main(void) {
 
     yylex_destroy();
   }
+  log_info("Shell exited");
+  log_shutdown();
 
   return EXIT_SUCCESS;
 }
