@@ -50,6 +50,66 @@ int execute_command(Command* cmd) {
   return -1;
 }
 
+char* command_to_string(Command* cmd) {
+  if (cmd == NULL) return NULL;
+
+  size_t total_length = 0;
+  for (int i = 0; cmd->argv.data[i] != NULL; i++) {
+    total_length += strlen(cmd->argv.data[i]) + 1;
+  }
+
+  for (size_t i = 0; i < cmd->redirects.size; i++) {
+    Redirect* redir = &cmd->redirects.data[i];
+    total_length += 3;
+    total_length += strlen(redir->target);
+  }
+
+  char* result = (char*)rmalloc(total_length + 1);
+  if (result == NULL) {
+    print_error("Memory allocation failed");
+    return NULL;
+  }
+  result[0] = '\0';
+
+  for (int i = 0; cmd->argv.data[i] != NULL; i++) {
+    strcat(result, cmd->argv.data[i]);
+    if (cmd->argv.data[i + 1] != NULL) {
+      strcat(result, " ");
+    }
+  }
+
+  for (size_t i = 0; i < cmd->redirects.size; i++) {
+    Redirect* redir = &cmd->redirects.data[i];
+    switch (redir->type) {
+      case REDIRECT_INPUT:
+        strcat(result, " < ");
+        break;
+      case REDIRECT_OUTPUT:
+        strcat(result, " > ");
+        break;
+      case REDIRECT_APPEND:
+        strcat(result, " >> ");
+        break;
+      case REDIRECT_INPUT_DUP:
+        strcat(result, " <&");
+        break;
+      case REDIRECT_OUTPUT_DUP:
+        strcat(result, " >&");
+        break;
+      case REDIRECT_APPEND_DUP:
+        strcat(result, " >>&");
+        break;
+    }
+    strcat(result, redir->target);
+  }
+
+  if (cmd->background) {
+    strcat(result, " &");
+  }
+
+  return result;
+}
+
 char* command_list_to_string(CommandList* list) {
   if (list == NULL || list->head == NULL) {
     return NULL;
@@ -59,38 +119,35 @@ char* command_list_to_string(CommandList* list) {
   Command* cmd = list->head;
 
   while (cmd != NULL) {
-    for (int i = 0; cmd->argv.data[i] != NULL; i++) {
-      total_length += strlen(cmd->argv.data[i]) + 1;
+    char* cmd_str = command_to_string(cmd);
+    if (cmd_str == NULL) {
+      return NULL;
     }
-    if (cmd->next != NULL) {
-      if (cmd->and_next) {
-        total_length += 4;
-      } else if (cmd->or_next) {
-        total_length += 4;
-      } else if (cmd->semi_next) {
-        total_length += 2;
-      } else {
-        total_length += 3;
-      }
-    }
+    total_length += strlen(cmd_str);
+    free(cmd_str);
+
+    if (cmd->next != NULL)
+      total_length += (cmd->and_next || cmd->or_next)? 4 : (cmd->semi_next)? 2 : 3;
     cmd = cmd->next;
   }
 
-  char* result = (char*)malloc(total_length + 1);
+  char* result = (char*)rmalloc(total_length + 1);
   if (result == NULL) {
-    perror("malloc");
+    print_error("Memory allocation failed");
     return NULL;
   }
   result[0] = '\0';
 
   cmd = list->head;
   while (cmd != NULL) {
-    for (int i = 0; cmd->argv.data[i] != NULL; i++) {
-      strcat(result, cmd->argv.data[i]);
-      if (cmd->argv.data[i + 1] != NULL) {
-        strcat(result, " ");
-      }
+    char* cmd_str = command_to_string(cmd);
+    if (cmd_str == NULL) {
+      free(result);
+      return NULL;
     }
+    strcat(result, cmd_str);
+    free(cmd_str);
+
     if (cmd->next != NULL) {
       if (cmd->and_next) {
         strcat(result, " && ");
