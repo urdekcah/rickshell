@@ -2,270 +2,251 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <sys/resource.h>
-#include <fcntl.h>
-#include <stdbool.h>
-#include <errno.h>
 #include <ctype.h>
+#include <fcntl.h>
+#include <sys/wait.h>
+#include <errno.h>
+#include "expr.h"
+#include "pipeline.h"
+#include "redirect.h"
 #include "execute.h"
+#include "job.h"
+#include "memory.h"
+#include "error.h"
 
 extern int yyparse(void);
-extern void yylex_destroy(void);
+extern int yylex_destroy(void);
 extern void yy_scan_string(const char *str);
 
-#define INITIAL_ARGV_SIZE 10
-#define ARGV_GROWTH_FACTOR 2
 #define MAX_INPUT_LENGTH 4096
+#define MAX_COMMAND_LENGTH 1024
 
 extern CommandList* command_list;
 
-static void print_error(const char* message) {
-  fprintf(stderr, "Error: %s\n", message);
-}
-
-static void* safe_malloc(size_t size) {
-  void* ptr = malloc(size);
-  if (ptr == NULL) {
-    print_error("Memory allocation failed");
-    exit(EXIT_FAILURE);
-  }
-  return ptr;
-}
-
-static void* safe_realloc(void* ptr, size_t size) {
-  void* new_ptr = realloc(ptr, size);
-  if (new_ptr == NULL && size != 0) {
-    print_error("Memory reallocation failed");
-    free(ptr);
-    exit(EXIT_FAILURE);
-  }
-  return new_ptr;
-}
-
-static char* safe_strdup(const char* str) {
-  if (str == NULL) return NULL;
-  char* new_str = strdup(str);
-  if (new_str == NULL) {
-    print_error("Memory allocation failed");
-    exit(EXIT_FAILURE);
-  }
-  return new_str;
-}
-
-Command* create_command(void) {
-  Command* cmd = safe_malloc(sizeof(Command));
-  memset(cmd, 0, sizeof(Command));
-  cmd->uid = getuid();
-  cmd->gid = getgid();
-  cmd->umask = 022;
-  return cmd;
-}
-
-bool add_argument(Command* cmd, const char* arg) {
-  if (cmd == NULL || arg == NULL) return false;
-  
-  if (cmd->argc == 0 || cmd->argc % INITIAL_ARGV_SIZE == 0) {
-    size_t new_size = (cmd->argc + INITIAL_ARGV_SIZE) * sizeof(char*);
-    cmd->argv = safe_realloc(cmd->argv, new_size);
-  }
-  
-  cmd->argv[cmd->argc] = safe_strdup(arg);
-  cmd->argc++;
-  cmd->argv[cmd->argc] = NULL;
-  return true;
-}
-
-bool add_redirect(Command* cmd, RedirectType type, int fd, const char* target) {
-  if (cmd == NULL || target == NULL || cmd->num_redirects >= MAX_REDIRECTS) return false;
-  
-  Redirect* redirect = &cmd->redirects[cmd->num_redirects];
-  redirect->type = type;
-  redirect->fd = fd;
-  redirect->target = safe_strdup(target);
-  redirect->is_fd = (target[0] >= '0' && target[0] <= '9' && target[1] == '\0');
-  
-  cmd->num_redirects++;
-  return true;
-}
-
-bool add_pipeline(Command* cmd, Command* next) {
-  if (cmd == NULL) return false;
-  Command* last = cmd;
-  while (last->next != NULL) {
-    last = last->next;
-  }
-  last->next = next;
-  return true;
-}
-
-bool set_command_user(Command* cmd, uid_t uid, gid_t gid) {
-  if (cmd == NULL) return false;
-  cmd->uid = uid;
-  cmd->gid = gid;
-  return true;
-}
-
-bool set_command_working_directory(Command* cmd, const char* directory) {
-  if (cmd == NULL || directory == NULL) return false;
-  
-  char* new_dir = strdup(directory);
-  if (new_dir == NULL) {
-    print_error("Memory allocation failed");
-    return false;
-  }
-  
-  free(cmd->working_directory);
-  cmd->working_directory = new_dir;
-  return true;
-}
-
-bool add_environment_variable(Command* cmd, const char* name, const char* value) {
-  if (cmd == NULL || name == NULL || value == NULL) return false;
-  
-  size_t len = strlen(name) + strlen(value) + 2;
-  char* env_var = safe_malloc(len);
-  
-  snprintf(env_var, len, "%s=%s", name, value);
-  
-  cmd->environment = safe_realloc(cmd->environment, sizeof(char*) * (cmd->num_env_vars + 1));
-  cmd->environment[cmd->num_env_vars++] = env_var;
-  
-  return true;
-}
-
-void set_command_umask(Command* cmd, mode_t umask) {
-  if (cmd == NULL) return;
-  cmd->umask = umask;
-}
-
-bool set_resource_limit(Command* cmd, int resource, const struct rlimit* rlim) {
-  if (cmd == NULL || rlim == NULL || resource < 0 || resource >= RLIMIT_NLIMITS) return false;
-  
-  if (!cmd->resource_limits_set) {
-    cmd->resource_limits = calloc(RLIMIT_NLIMITS, sizeof(struct rlimit));
-    if (cmd->resource_limits == NULL) {
-      print_error("Memory allocation failed");
-      return false;
-    }
-    cmd->resource_limits_set = true;
-  }
-  memcpy(&cmd->resource_limits[resource], rlim, sizeof(struct rlimit));
-  return true;
-}
-
-CommandList* create_command_list(void) {
-  CommandList* list = calloc(1, sizeof(CommandList));
-  if (list == NULL) {
-    print_error("Memory allocation failed");
-    return NULL;
-  }
-  return list;
-}
-
-bool add_command(CommandList* list, Command* cmd) {
-  if (list == NULL || cmd == NULL) return false;
-  
-  if (list->head == NULL) {
-    list->head = cmd;
-    list->tail = cmd;
-  } else {
-    list->tail->next = cmd;
-    list->tail = cmd;
-  }
-  return true;
-}
-
-bool append_command_list(CommandList* dest, CommandList* src) {
-  if (dest == NULL || src == NULL) return false;
-  
-  if (dest->head == NULL) {
-    dest->head = src->head;
-    dest->tail = src->tail;
-  } else {
-    dest->tail->next = src->head;
-    dest->tail = src->tail;
-  }
-  
-  src->head = NULL;
-  src->tail = NULL;
-  return true;
-}
-
-void free_command(Command* cmd) {
-  if (cmd == NULL) return;
-  for (int i = 0; i < cmd->argc; i++)
-    free(cmd->argv[i]);
-  free(cmd->argv);
-  for (int i = 0; i < cmd->num_redirects; i++)
-    free(cmd->redirects[i].target);
-  free(cmd->working_directory);
-  for (int i = 0; i < cmd->num_env_vars; i++)
-    free(cmd->environment[i]);
-  free(cmd->environment);
-  free(cmd->resource_limits);
-  if (cmd->subcommand)
-    free_command_list(cmd->subcommand);
-  memset(cmd, 0, sizeof(Command));
-  free(cmd);
-}
-
-void free_command_list(CommandList* list) {
-  if (list == NULL) return;
-  
-  Command* current = list->head;
-  while (current != NULL) {
-    Command* next = current->next;
-    free_command(current);
-    current = next;
-  }
-  
-  memset(list, 0, sizeof(CommandList));
-  free(list);
-}
-
-void set_pipeline_background(CommandList* list) {
-  if (list == NULL) return;
-  Command* cmd = list->head;
-  while (cmd != NULL) {
-    cmd->background = true;
-    cmd = cmd->next;
-  }
-}
-
 int execute_command(Command* cmd) {
-  if (cmd == NULL || cmd->argc == 0 || cmd->argv == NULL) {
+  if (cmd == NULL || cmd->argv.data == NULL || cmd->argv.data[0] == NULL) {
     print_error("Invalid command");
     return -1;
   }
 
   pid_t pid = fork();
-
-  if (pid < 0) {
-    fprintf(stderr, "Error: Fork failed (%s)\n", strerror(errno));
+  if (pid == -1) {
+    print_error("Fork failed");
     return -1;
   } else if (pid == 0) {
-    execvp(cmd->argv[0], cmd->argv);
-        
-    fprintf(stderr, "Error: Command execution failed (%s)\n", strerror(errno));
-    exit(EXIT_FAILURE);
+    if (handle_redirection(cmd) == -1) {
+      _exit(EXIT_FAILURE);
+    }
+
+    execvp(cmd->argv.data[0], cmd->argv.data);
+    print_error("Execvp failed");
+    _exit(EXIT_FAILURE);
   } else {
-    if (!cmd->background) {
-      int status;
-      waitpid(pid, &status, 0);
-        
-      if (WIFEXITED(status)) {
-        return WEXITSTATUS(status);
-      } else {
-        print_error("Child process terminated abnormally");
-        return -1;
-      }
-    } else {
-      printf("[%d] %s\n", pid, cmd->argv[0]);
-      return 0;
+    int status;
+    if (waitpid(pid, &status, 0) == -1) {
+      print_error("Waitpid failed");
+      return -1;
+    }
+
+    if (WIFEXITED(status)) {
+      return WEXITSTATUS(status);
+    } else if (WIFSIGNALED(status)) {
+      fprintf(stderr, "Command terminated by signal %d\n", WTERMSIG(status));
+      return 128 + WTERMSIG(status);
     }
   }
+
+  return -1;
+}
+
+char* command_to_string(Command* cmd) {
+  if (cmd == NULL) return NULL;
+
+  size_t total_length = 0;
+  for (int i = 0; cmd->argv.data[i] != NULL; i++) {
+    total_length += strnlen(cmd->argv.data[i], MAX_COMMAND_LENGTH) + 1;
+    if (total_length > MAX_COMMAND_LENGTH) {
+      print_error("Command length exceeds maximum allowed");
+      return NULL;
+    }
+  }
+
+  for (size_t i = 0; i < cmd->redirects.size; i++) {
+    Redirect* redir = &cmd->redirects.data[i];
+    total_length += 3 + strnlen(redir->target, MAX_COMMAND_LENGTH);
+    if (total_length > MAX_COMMAND_LENGTH) {
+      print_error("Command length exceeds maximum allowed");
+      return NULL;
+    }
+  }
+
+  char* result = (char*)rmalloc(total_length + 1);
+  if (result == NULL) {
+    print_error("Memory allocation failed");
+    return NULL;
+  }
+  memset(result, 0, total_length + 1);
+
+  for (int i = 0; cmd->argv.data[i] != NULL; i++) {
+    if (rstrcat(result, cmd->argv.data[i], total_length + 1) == NULL) {
+      rfree((void*)result);
+      return NULL;
+    }
+    if (cmd->argv.data[i + 1] != NULL) {
+      if (rstrcat(result, " ", total_length + 1) == NULL) {
+        rfree((void*)result);
+        return NULL;
+      }
+    }
+  }
+
+  for (size_t i = 0; i < cmd->redirects.size; i++) {
+    Redirect* redir = &cmd->redirects.data[i];
+    const char* redir_str = NULL;
+    switch (redir->type) {
+      case REDIRECT_INPUT:
+        redir_str = " < ";
+        break;
+      case REDIRECT_OUTPUT:
+        redir_str = " > ";
+        break;
+      case REDIRECT_APPEND:
+        redir_str = " >> ";
+        break;
+      case REDIRECT_INPUT_DUP:
+        redir_str = " <&";
+        break;
+      case REDIRECT_OUTPUT_DUP:
+        redir_str = " >&";
+        break;
+      case REDIRECT_APPEND_DUP:
+        redir_str = " >>&";
+        break;
+      default:
+        print_error("Unknown redirect type");
+        rfree((void*)result);
+        return NULL;
+    }
+    if (rstrcat(result, redir_str, total_length + 1) == NULL ||
+      rstrcat(result, redir->target, total_length + 1) == NULL) {
+      rfree((void*)result);
+      return NULL;
+    }
+  }
+
+  if (cmd->background) {
+    if (rstrcat(result, " &", total_length + 1) == NULL) {
+      rfree((void*)result);
+      return NULL;
+    }
+  }
+
+  return result;
+}
+
+char* command_list_to_string(CommandList* list) {
+  if (list == NULL || list->head == NULL) {
+    return NULL;
+  }
+
+  size_t total_length = 0;
+  Command* cmd = list->head;
+
+  while (cmd != NULL) {
+    char* cmd_str = command_to_string(cmd);
+    if (cmd_str == NULL) {
+      return NULL;
+    }
+    total_length += strlen(cmd_str);
+    rfree((void*)cmd_str);
+
+    if (cmd->next != NULL)
+      total_length += (cmd->and_next || cmd->or_next) ? 4 : (cmd->semi_next) ? 2 : 3;
+    if (total_length > MAX_COMMAND_LENGTH) {
+      print_error("Command list length exceeds maximum allowed");
+      return NULL;
+    }
+    cmd = cmd->next;
+  }
+
+  char* result = (char*)rmalloc(total_length + 1);
+  if (result == NULL) {
+    print_error("Memory allocation failed");
+    return NULL;
+  }
+  memset(result, 0, total_length + 1);
+
+  cmd = list->head;
+  while (cmd != NULL) {
+    char* cmd_str = command_to_string(cmd);
+    if (cmd_str == NULL) {
+      rfree((void*)result);
+      return NULL;
+    }
+    if (rstrcat(result, cmd_str, total_length + 1) == NULL) {
+      rfree((void*)cmd_str);
+      rfree((void*)result);
+      return NULL;
+    }
+    rfree((void*)cmd_str);
+
+    if (cmd->next != NULL) {
+      const char* separator = cmd->and_next ? " && " :
+                  cmd->or_next ? " || " :
+                  cmd->semi_next ? "; " : " | ";
+      if (rstrcat(result, separator, total_length + 1) == NULL) {
+        rfree((void*)result);
+        return NULL;
+      }
+    }
+    cmd = cmd->next;
+  }
+
+  return result;
+}
+
+int execute_command_list(CommandList* list) {
+  if (list == NULL || list->head == NULL) {
+    print_error("Invalid command list");
+    return -1;
+  }
+
+  int status = 0;
+  Command* cmd = list->head;
+
+  bool background = false;
+  Command* last_cmd = list->tail;
+  if (last_cmd && last_cmd->background) {
+    background = true;
+    last_cmd->background = false;
+  }
+
+  if (background) {
+    char* command_line = command_list_to_string(list);
+    if (command_line == NULL) {
+      return -1;
+    }
+    status = execute_background_job(list, command_line);
+    rfree((void*)command_line);
+    return status;
+  }
+
+  while (cmd != NULL) {
+    if (cmd->pipline_next) {
+      status = execute_pipeline(cmd);
+      while (cmd != NULL && cmd->pipline_next)
+        cmd = cmd->next;
+    } else {
+      status = execute_command(cmd);
+      if (status != 0 && cmd->and_next)
+        break;
+      if (status == 0 && cmd->or_next)
+        break;
+    }
+    cmd = cmd->next;
+  }
+  
+  return status;
 }
 
 int parse_and_execute(const char* input) {
@@ -273,43 +254,71 @@ int parse_and_execute(const char* input) {
     print_error("Invalid input");
     return -1;
   }
-    
-  size_t input_len = strlen(input);
-  if (input_len > MAX_INPUT_LENGTH) {
+  
+  size_t input_len = strnlen(input, MAX_INPUT_LENGTH);
+  if (input_len >= MAX_INPUT_LENGTH) {
     print_error("Input exceeds maximum allowed length");
     return -1;
   }
 
-  char* sanitized_input = safe_malloc(input_len + 1);
+  char* sanitized_input = (char*)rmalloc(input_len + 1);
+  if (sanitized_input == NULL) {
+    print_error("Memory allocation failed");
+    return -1;
+  }
+
   size_t sanitized_len = 0;
   for (size_t i = 0; i < input_len; i++) {
-    if (isprint(input[i]) || isspace(input[i]))
+    if (isprint(input[i]) || isspace(input[i])) {
       sanitized_input[sanitized_len++] = input[i];
+    }
   }
   sanitized_input[sanitized_len] = '\0';
 
-  yy_scan_string(sanitized_input);
-  command_list = NULL;
-  int result = yyparse();
-  yylex_destroy();
-    
-  free(sanitized_input);
-    
-  if (result == 0) {
-    if (command_list != NULL) {      
-      Command* cmd = command_list->head;
-      while (cmd != NULL) {
-        execute_command(cmd);
-        cmd = cmd->next;
-      }
-      
-      free_command_list(command_list);
+  char* saveptr;
+  char* cmd = strtok_r(sanitized_input, ";", &saveptr);
+  int result = 0;
+
+  while (cmd != NULL) {
+    while (isspace(*cmd)) cmd++;
+    if (*cmd != '\0') {
+      yy_scan_string(cmd);
       command_list = NULL;
-    } else {
-      printf("No commands to execute\n");
+      result = yyparse();
+      yylex_destroy();
+      
+      if (result == 0) {
+        if (command_list != NULL) {
+          bool background = false;
+          Command* last_cmd = command_list->tail;
+          if (last_cmd && last_cmd->background) {
+            background = true;
+            last_cmd->background = false;
+          }
+
+          if (background) {
+            char* command_line = command_list_to_string(command_list);
+            if (command_line != NULL) {
+              execute_background_job(command_list, command_line);
+              rfree((void*)command_line);
+            }
+          } else {
+            int status = execute_command_list(command_list);
+            (void)status;
+          }
+          free_command_list(command_list);
+          command_list = NULL;
+        } else {
+          printf("No commands to execute\n");
+        }
+      } else {
+        printf("Failed to parse the command\n");
+        break;
+      }
     }
-  } else {
-    printf("Failed to parse the command\n");
+    cmd = strtok_r(NULL, ";", &saveptr);
   }
+  
+  rfree((void*)sanitized_input);
   return result;
 }

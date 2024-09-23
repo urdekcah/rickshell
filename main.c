@@ -7,9 +7,14 @@
 #include <errno.h>
 #include <limits.h>
 #include <pwd.h>
+#include "expr.h"
 #include "execute.h"
 #include "parser.tab.h"
 #include "color.h"
+#include "memory.h"
+#include "file.h"
+#include "log.h"
+#include "job.h"
 
 #define INITIAL_BUFFER_SIZE (1 * 1024)  // 1 KB initial size
 #define MAX_BUFFER_SIZE (100 * 1024 * 1024)  // 100 MB limit
@@ -21,7 +26,7 @@ extern int yylex_destroy(void);
 static volatile sig_atomic_t keep_running = 1;
 
 static void handle_sigint(int sig) {
-  (void)sig;  // Unused parameter
+  (void)sig;  // Unused parameter 
   keep_running = 0;
   const char msg[] = "\nUse 'exit' to quit the shell.\n> ";
   if (write(STDOUT_FILENO, msg, sizeof(msg) - 1) == -1) {
@@ -34,7 +39,7 @@ static char* get_hostname(void) {
   long host_name_max = sysconf(_SC_HOST_NAME_MAX);
   if (host_name_max == -1)
     host_name_max = _POSIX_HOST_NAME_MAX;
-  hostname = malloc(host_name_max + 1);
+  hostname = rmalloc(host_name_max + 1);
   if (hostname == NULL) {
     perror("Error allocating memory");
     return NULL;
@@ -42,11 +47,13 @@ static char* get_hostname(void) {
 
   if (gethostname(hostname, host_name_max + 1) != 0) {
     perror("Error getting hostname");
-    free(hostname);
+    rfree(hostname);
     return NULL;
   }
 
-  return hostname;
+  char* copy = strdup(hostname);
+  rfree(hostname);
+  return copy;
 }
 
 static char* get_username(void) {
@@ -78,21 +85,23 @@ static char* get_current_directory() {
 static void print_prompt(void) {
   char* hostname = get_hostname();
   char* username = get_username();
+  char* cwd = get_current_directory();
 
-  if (hostname && username) {
-    printf(ANSI_COLOR_BOLD_BLUE "%s@%s" ANSI_COLOR_BOLD_BLACK ":" ANSI_COLOR_BOLD_YELLOW "%s" ANSI_COLOR_RESET "$ ", username, hostname, get_current_directory());
+  if (hostname && username && cwd) {
+    printf(ANSI_COLOR_BOLD_BLUE "%s@%s" ANSI_COLOR_BOLD_BLACK ":" ANSI_COLOR_BOLD_YELLOW "%s" ANSI_COLOR_RESET "$ ", username, hostname, cwd);
   } else {
     printf("daniel@fishydino:~$ ");  // Daniel (Elliott): English name of rickroot30
   }
 
   fflush(stdout);
 
-  free(hostname);
-  free(username);
+  rfree(hostname);
+  rfree(username);
+  rfree(cwd);
 }
 
 static char* get_input(size_t* size) {
-  char* buffer = malloc(INITIAL_BUFFER_SIZE);
+  char* buffer = rmalloc(INITIAL_BUFFER_SIZE);
   if (!buffer) {
     perror("Error allocating memory");
     return NULL;
@@ -106,13 +115,13 @@ static char* get_input(size_t* size) {
     if (!fgets(buffer + input_length, remaining, stdin)) {
       if (feof(stdin)) {
         if (input_length == 0) {
-          free(buffer);
+          rfree(buffer);
           return NULL;
         }
         break;
       } else {
         perror("Error reading input");
-        free(buffer);
+        rfree(buffer);
         return NULL;
       }
     }
@@ -126,17 +135,17 @@ static char* get_input(size_t* size) {
     if (input_length == buffer_size - 1) {
       if (buffer_size >= MAX_BUFFER_SIZE) {
         fprintf(stderr, "Error: Input too large\n");
-        free(buffer);
+        rfree(buffer);
         return NULL;
       }
       size_t new_size = (size_t)(buffer_size * BUFFER_GROWTH_FACTOR);
       if (new_size > MAX_BUFFER_SIZE) {
         new_size = MAX_BUFFER_SIZE;
       }
-      char* new_buffer = realloc(buffer, new_size);
+      char* new_buffer = rrealloc(buffer, new_size);
       if (!new_buffer) {
         perror("Error reallocating memory");
-        free(buffer);
+        rfree(buffer);
         return NULL;
       }
       buffer = new_buffer;
@@ -172,13 +181,29 @@ static int process_command(const char* input) {
 }
 
 int main(void) {
+  ensure_directory_exist("~/.rickshell");
   if (setup_signal_handler() == -1) {
     return EXIT_FAILURE;
   }
 
+  LogConfig config = {
+    .name = "rickshell",
+    .level = LOG_LEVEL_INFO,
+    .color_output = true,
+    .filename = "~/.rickshell/rickshell.log",
+    .max_file_size = 10 * 1024 * 1024,  // 10 MB
+    .max_backup_files = 10,
+    .append_mode = true,
+    .file_output_only = true,
+    .log_format = "[%Y-%M-%d %H:%M:%S] [%L] [%p] (%a) %f:%l (%n): %m"
+  };
+  log_init(&config);
+
   printf("Enter commands (type 'exit' to quit):\n");
+  log_info("Shell started");
 
   while (keep_running) {
+    print_job_status();
     print_prompt();
 
     size_t input_size;
@@ -193,12 +218,12 @@ int main(void) {
     }
 
     if (input_size == 0) {
-      free(input);
+      rfree(input);
       continue;
     }
 
     int result = process_command(input);
-    free(input);
+    rfree(input);
 
     if (result == 1) {
       printf("Exiting...\n");
@@ -207,6 +232,8 @@ int main(void) {
 
     yylex_destroy();
   }
+  log_info("Shell exited");
+  log_shutdown();
 
   return EXIT_SUCCESS;
 }
