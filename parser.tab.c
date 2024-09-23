@@ -76,6 +76,7 @@
 #include "expr.h"
 #include "redirect.h"
 #include "pipeline.h"
+#include "memory.h"  // Include custom memory management
 
 extern int yylex();
 extern char* yytext;
@@ -85,7 +86,7 @@ void yyerror(const char* s);
 Command* current_command = NULL;
 CommandList* command_list = NULL;
 
-#line 89 "parser.tab.c"
+#line 90 "parser.tab.c"
 
 # ifndef YY_CAST
 #  ifdef __cplusplus
@@ -156,14 +157,14 @@ extern int yydebug;
 #if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
 union YYSTYPE
 {
-#line 20 "parser.y"
+#line 21 "parser.y"
 
     char* str;
     int num;
     Command* cmd;
     CommandList* cmd_list;
 
-#line 167 "parser.tab.c"
+#line 168 "parser.tab.c"
 
 };
 typedef union YYSTYPE YYSTYPE;
@@ -482,16 +483,16 @@ union yyalloc
 /* YYFINAL -- State number of the termination state.  */
 #define YYFINAL  2
 /* YYLAST -- Last index in YYTABLE.  */
-#define YYLAST   83
+#define YYLAST   78
 
 /* YYNTOKENS -- Number of terminals.  */
 #define YYNTOKENS  21
 /* YYNNTS -- Number of nonterminals.  */
 #define YYNNTS  13
 /* YYNRULES -- Number of rules.  */
-#define YYNRULES  40
+#define YYNRULES  38
 /* YYNSTATES -- Number of states.  */
-#define YYNSTATES  60
+#define YYNSTATES  57
 
 #define YYUNDEFTOK  2
 #define YYMAXUTOK   273
@@ -540,11 +541,10 @@ static const yytype_int8 yytranslate[] =
   /* YYRLINE[YYN] -- Source line where rule number YYN was defined.  */
 static const yytype_uint8 yyrline[] =
 {
-       0,    40,    40,    41,    44,    52,    61,    69,    80,    81,
-      84,    89,    95,   101,   108,   109,   116,   117,   124,   129,
-     134,   139,   146,   147,   150,   151,   152,   153,   156,   163,
-     176,   185,   192,   199,   206,   213,   220,   228,   235,   242,
-     249
+       0,    41,    41,    42,    45,    46,    49,    57,    61,    69,
+      74,    80,    88,    89,    96,    97,   105,   110,   115,   120,
+     127,   128,   131,   132,   133,   134,   137,   145,   159,   169,
+     177,   185,   193,   201,   209,   218,   226,   234,   242
 };
 #endif
 
@@ -556,7 +556,7 @@ static const char *const yytname[] =
   "$end", "error", "$undefined", "WORD", "QUOTED_STRING", "PIPE", "LESS",
   "GREATER", "DGREATER", "LESSAND", "GREATAND", "LESSGREAT", "DGREATAND",
   "AMPERSAND", "SEMICOLON", "AND", "OR", "NEWLINE", "IO_NUMBER", "'('",
-  "')'", "$accept", "input", "line", "separator", "and_or_list",
+  "')'", "$accept", "input", "line", "command_sequence", "and_or_list",
   "pipeline", "command", "simple_command", "cmd_prefix", "cmd_suffix",
   "arg", "cmd_word", "io_redirect", YY_NULLPTR
 };
@@ -573,7 +573,7 @@ static const yytype_int16 yytoknum[] =
 };
 # endif
 
-#define YYPACT_NINF (-41)
+#define YYPACT_NINF (-38)
 
 #define yypact_value_is_default(Yyn) \
   ((Yyn) == YYPACT_NINF)
@@ -587,12 +587,12 @@ static const yytype_int16 yytoknum[] =
      STATE-NUM.  */
 static const yytype_int8 yypact[] =
 {
-     -41,     4,   -41,   -41,     5,     6,    21,    24,    25,    37,
-      43,    12,    23,   -41,    66,     1,   -41,   -41,    60,    47,
-     -41,   -41,   -41,   -41,   -41,   -41,   -41,   -41,    44,    45,
-      57,    29,   -12,    23,    23,    23,   -41,   -41,    23,    47,
-     -41,   -41,   -41,    47,   -41,   -41,   -41,   -41,   -41,    23,
-     -41,   -41,   -41,     1,     1,     1,   -41,    47,   -41,   -41
+     -38,     4,   -38,   -38,    -1,     2,    18,    27,    31,    43,
+      44,    37,    30,   -38,    15,    -7,    55,   -38,   -38,    60,
+      47,   -38,   -38,   -38,   -38,   -38,   -38,   -38,   -38,    49,
+      58,    59,    11,   -38,    30,   -38,    30,    30,    30,    47,
+     -38,   -38,   -38,    47,   -38,   -38,   -38,   -38,   -38,   -38,
+      -7,    55,    55,   -38,    47,   -38,   -38
 };
 
   /* YYDEFACT[STATE-NUM] -- Default reduction number in state STATE-NUM.
@@ -600,26 +600,26 @@ static const yytype_int8 yypact[] =
      means the default is an error.  */
 static const yytype_int8 yydefact[] =
 {
-       2,     0,     1,    30,     0,     0,     0,     0,     0,     0,
-       0,     0,     0,     3,     6,    10,    14,    16,     0,    21,
-      22,    31,    33,    35,    32,    34,    36,    37,     0,     0,
-       0,     0,     7,     9,     0,     0,     8,     4,     0,    19,
-      23,    28,    29,    20,    26,    24,    38,    39,    40,     0,
-      17,     9,     5,    13,    11,    12,    15,    18,    27,    25
+       2,     0,     1,    28,     0,     0,     0,     0,     0,     0,
+       0,     0,     0,     3,     5,     6,     9,    12,    14,     0,
+      19,    20,    29,    31,    33,    30,    32,    34,    35,     0,
+       0,     0,     0,     8,     0,     4,     0,     0,     0,    17,
+      21,    26,    27,    18,    24,    22,    36,    37,    38,    15,
+       7,    10,    11,    13,    16,    25,    23
 };
 
   /* YYPGOTO[NTERM-NUM].  */
 static const yytype_int8 yypgoto[] =
 {
-     -41,   -41,   -41,    30,    49,     3,    26,   -41,   -41,    34,
-     -40,    56,   -18
+     -38,   -38,   -38,   -38,    -9,   -18,    26,   -38,   -38,    34,
+     -37,    56,   -19
 };
 
   /* YYDEFGOTO[NTERM-NUM].  */
 static const yytype_int8 yydefgoto[] =
 {
-      -1,     1,    13,    37,    14,    15,    16,    17,    18,    43,
-      44,    19,    20
+      -1,     1,    13,    14,    15,    16,    17,    18,    19,    43,
+      44,    20,    21
 };
 
   /* YYTABLE[YYPACT[STATE-NUM]] -- What to do in state STATE-NUM.  If
@@ -627,28 +627,26 @@ static const yytype_int8 yydefgoto[] =
      number is the opposite.  If YYTABLE_NINF, syntax error.  */
 static const yytype_int8 yytable[] =
 {
-      40,    45,    51,    58,     2,    36,    38,     3,    21,    22,
-       4,     5,     6,     7,     8,     9,    10,    58,    28,    29,
-      30,    45,    11,    12,    23,    59,     3,    24,    25,     4,
-       5,     6,     7,     8,     9,    10,    53,    54,    55,    59,
-      26,    11,    12,    49,    34,    35,    27,    46,    47,    50,
-      41,    42,    53,     4,     5,     6,     7,     8,     9,    10,
-      48,    31,    52,     3,    56,    11,     4,     5,     6,     7,
-       8,     9,    10,    57,    39,     0,     0,     0,    11,    32,
-      33,    34,    35,    36
+      40,    45,    22,    32,     2,    23,    55,     3,    36,    37,
+       4,     5,     6,     7,     8,     9,    10,    55,    51,    52,
+      45,    24,    11,    12,    56,    50,    36,    37,    33,    34,
+      25,    49,    35,     3,    26,    56,     4,     5,     6,     7,
+       8,     9,    10,    29,    30,    31,    27,    28,    11,    12,
+      41,    42,    46,     4,     5,     6,     7,     8,     9,    10,
+      38,    47,    48,     3,    53,    11,     4,     5,     6,     7,
+       8,     9,    10,    54,     0,    39,     0,     0,    11
 };
 
 static const yytype_int8 yycheck[] =
 {
-      18,    19,    14,    43,     0,    17,     5,     3,     3,     3,
-       6,     7,     8,     9,    10,    11,    12,    57,     6,     7,
-       8,    39,    18,    19,     3,    43,     3,     3,     3,     6,
-       7,     8,     9,    10,    11,    12,    33,    34,    35,    57,
-       3,    18,    19,    14,    15,    16,     3,     3,     3,    20,
-       3,     4,    49,     6,     7,     8,     9,    10,    11,    12,
-       3,    12,    32,     3,    38,    18,     6,     7,     8,     9,
-      10,    11,    12,    39,    18,    -1,    -1,    -1,    18,    13,
-      14,    15,    16,    17
+      19,    20,     3,    12,     0,     3,    43,     3,    15,    16,
+       6,     7,     8,     9,    10,    11,    12,    54,    36,    37,
+      39,     3,    18,    19,    43,    34,    15,    16,    13,    14,
+       3,    20,    17,     3,     3,    54,     6,     7,     8,     9,
+      10,    11,    12,     6,     7,     8,     3,     3,    18,    19,
+       3,     4,     3,     6,     7,     8,     9,    10,    11,    12,
+       5,     3,     3,     3,    38,    18,     6,     7,     8,     9,
+      10,    11,    12,    39,    -1,    19,    -1,    -1,    18
 };
 
   /* YYSTOS[STATE-NUM] -- The (internal number of the) accessing
@@ -656,31 +654,29 @@ static const yytype_int8 yycheck[] =
 static const yytype_int8 yystos[] =
 {
        0,    22,     0,     3,     6,     7,     8,     9,    10,    11,
-      12,    18,    19,    23,    25,    26,    27,    28,    29,    32,
-      33,     3,     3,     3,     3,     3,     3,     3,     6,     7,
-       8,    25,    13,    14,    15,    16,    17,    24,     5,    32,
-      33,     3,     4,    30,    31,    33,     3,     3,     3,    14,
-      20,    14,    24,    26,    26,    26,    27,    30,    31,    33
+      12,    18,    19,    23,    24,    25,    26,    27,    28,    29,
+      32,    33,     3,     3,     3,     3,     3,     3,     3,     6,
+       7,     8,    25,    13,    14,    17,    15,    16,     5,    32,
+      33,     3,     4,    30,    31,    33,     3,     3,     3,    20,
+      25,    26,    26,    27,    30,    31,    33
 };
 
   /* YYR1[YYN] -- Symbol number of symbol that rule YYN derives.  */
 static const yytype_int8 yyr1[] =
 {
-       0,    21,    22,    22,    23,    23,    23,    23,    24,    24,
-      25,    25,    25,    25,    26,    26,    27,    27,    28,    28,
-      28,    28,    29,    29,    30,    30,    30,    30,    31,    31,
-      32,    33,    33,    33,    33,    33,    33,    33,    33,    33,
-      33
+       0,    21,    22,    22,    23,    23,    24,    24,    24,    25,
+      25,    25,    26,    26,    27,    27,    28,    28,    28,    28,
+      29,    29,    30,    30,    30,    30,    31,    31,    32,    33,
+      33,    33,    33,    33,    33,    33,    33,    33,    33
 };
 
   /* YYR2[YYN] -- Number of symbols on the right hand side of rule YYN.  */
 static const yytype_int8 yyr2[] =
 {
-       0,     2,     0,     2,     2,     3,     1,     2,     1,     1,
-       1,     3,     3,     3,     1,     3,     1,     3,     3,     2,
-       2,     1,     1,     2,     1,     2,     1,     2,     1,     1,
-       1,     2,     2,     2,     2,     2,     2,     2,     3,     3,
-       3
+       0,     2,     0,     2,     2,     1,     1,     3,     2,     1,
+       3,     3,     1,     3,     1,     3,     3,     2,     2,     1,
+       1,     2,     1,     2,     1,     2,     1,     1,     1,     2,
+       2,     2,     2,     2,     2,     2,     3,     3,     3
 };
 
 
@@ -1375,183 +1371,182 @@ yyreduce:
   YY_REDUCE_PRINT (yyn);
   switch (yyn)
     {
-  case 4:
-#line 45 "parser.y"
-    {
-        if (command_list == NULL) {
-            command_list = (yyvsp[-1].cmd_list);
-        } else {
-            append_command_list(command_list, (yyvsp[-1].cmd_list));
-        }
-    }
-#line 1388 "parser.tab.c"
-    break;
-
-  case 5:
-#line 53 "parser.y"
-    {
-        set_pipeline_background((yyvsp[-2].cmd_list));
-        if (command_list == NULL) {
-            command_list = (yyvsp[-2].cmd_list);
-        } else {
-            append_command_list(command_list, (yyvsp[-2].cmd_list));
-        }
-    }
-#line 1401 "parser.tab.c"
-    break;
-
   case 6:
-#line 62 "parser.y"
-    {
-        if (command_list == NULL) {
-            command_list = (yyvsp[0].cmd_list);
-        } else {
-            append_command_list(command_list, (yyvsp[0].cmd_list));
-        }
-    }
-#line 1413 "parser.tab.c"
+#line 50 "parser.y"
+                {
+                    if (command_list == NULL) {
+                        command_list = (yyvsp[0].cmd_list);
+                    } else {
+                        append_command_list(command_list, (yyvsp[0].cmd_list));
+                    }
+                }
+#line 1384 "parser.tab.c"
     break;
 
   case 7:
-#line 70 "parser.y"
-    {
-        set_pipeline_background((yyvsp[-1].cmd_list));
-        if (command_list == NULL) {
-            command_list = (yyvsp[-1].cmd_list);
-        } else {
-            append_command_list(command_list, (yyvsp[-1].cmd_list));
-        }
-    }
-#line 1426 "parser.tab.c"
+#line 58 "parser.y"
+                {
+                    append_command_list(command_list, (yyvsp[0].cmd_list));
+                }
+#line 1392 "parser.tab.c"
     break;
 
-  case 10:
-#line 85 "parser.y"
+  case 8:
+#line 62 "parser.y"
+                {
+                    if (command_list && command_list->tail) {
+                        set_command_background(command_list->tail);
+                    }
+                }
+#line 1402 "parser.tab.c"
+    break;
+
+  case 9:
+#line 70 "parser.y"
             {
                 (yyval.cmd_list) = create_command_list();
                 add_command((yyval.cmd_list), (yyvsp[0].cmd));
             }
-#line 1435 "parser.tab.c"
+#line 1411 "parser.tab.c"
+    break;
+
+  case 10:
+#line 75 "parser.y"
+            {
+                (yyvsp[-2].cmd_list)->tail->and_next = 1;
+                add_command((yyvsp[-2].cmd_list), (yyvsp[0].cmd));
+                (yyval.cmd_list) = (yyvsp[-2].cmd_list);
+            }
+#line 1421 "parser.tab.c"
     break;
 
   case 11:
-#line 90 "parser.y"
+#line 81 "parser.y"
             {
-                (yyvsp[-2].cmd_list)->tail->and_next = 1;  // Set and_next flag for the last command of the previous list
+                (yyvsp[-2].cmd_list)->tail->or_next = 1;
                 add_command((yyvsp[-2].cmd_list), (yyvsp[0].cmd));
                 (yyval.cmd_list) = (yyvsp[-2].cmd_list);
             }
-#line 1445 "parser.tab.c"
-    break;
-
-  case 12:
-#line 96 "parser.y"
-            {
-                (yyvsp[-2].cmd_list)->tail->or_next = 1;  // Set or_next flag for the last command of the previous list
-                add_command((yyvsp[-2].cmd_list), (yyvsp[0].cmd));
-                (yyval.cmd_list) = (yyvsp[-2].cmd_list);
-            }
-#line 1455 "parser.tab.c"
+#line 1431 "parser.tab.c"
     break;
 
   case 13:
-#line 102 "parser.y"
-            {
-                add_command((yyvsp[-2].cmd_list), (yyvsp[0].cmd));
-                (yyval.cmd_list) = (yyvsp[-2].cmd_list);
-            }
-#line 1464 "parser.tab.c"
-    break;
-
-  case 15:
-#line 110 "parser.y"
+#line 90 "parser.y"
         {
             add_pipeline((yyvsp[-2].cmd), (yyvsp[0].cmd));
             (yyval.cmd) = (yyvsp[-2].cmd);
         }
-#line 1473 "parser.tab.c"
+#line 1440 "parser.tab.c"
+    break;
+
+  case 15:
+#line 98 "parser.y"
+       {
+            (yyval.cmd) = create_command();
+            (yyval.cmd)->is_subcommand = 1;  // Changed from $2 to 1
+            // (yyval.cmd)->subcommand_list = (yyvsp[-1].cmd_list);  // Store the subcommand list
+       }
+#line 1450 "parser.tab.c"
+    break;
+
+  case 16:
+#line 106 "parser.y"
+               {
+                   (yyval.cmd) = current_command;
+                   current_command = NULL;
+               }
+#line 1459 "parser.tab.c"
     break;
 
   case 17:
-#line 118 "parser.y"
-       {
-            (yyval.cmd) = create_command();
-            (yyval.cmd)->is_subcommand = (yyvsp[-1].cmd_list);
-       }
-#line 1482 "parser.tab.c"
+#line 111 "parser.y"
+               {
+                   (yyval.cmd) = current_command;
+                   current_command = NULL;
+               }
+#line 1468 "parser.tab.c"
     break;
 
   case 18:
-#line 125 "parser.y"
+#line 116 "parser.y"
                {
                    (yyval.cmd) = current_command;
                    current_command = NULL;
                }
-#line 1491 "parser.tab.c"
+#line 1477 "parser.tab.c"
     break;
 
   case 19:
-#line 130 "parser.y"
+#line 121 "parser.y"
                {
                    (yyval.cmd) = current_command;
                    current_command = NULL;
                }
-#line 1500 "parser.tab.c"
+#line 1486 "parser.tab.c"
     break;
 
-  case 20:
-#line 135 "parser.y"
-               {
-                   (yyval.cmd) = current_command;
-                   current_command = NULL;
-               }
-#line 1509 "parser.tab.c"
-    break;
-
-  case 21:
-#line 140 "parser.y"
-               {
-                   (yyval.cmd) = current_command;
-                   current_command = NULL;
-               }
-#line 1518 "parser.tab.c"
-    break;
-
-  case 28:
-#line 157 "parser.y"
+  case 26:
+#line 138 "parser.y"
    {
        if (current_command == NULL) {
            current_command = create_command();
        }
        add_argument(current_command, (yyvsp[0].str));
+       rfree((yyvsp[0].str));  // Free the allocated string
    }
-#line 1529 "parser.tab.c"
+#line 1498 "parser.tab.c"
     break;
 
-  case 29:
-#line 164 "parser.y"
+  case 27:
+#line 146 "parser.y"
    {
        if (current_command == NULL) {
            current_command = create_command();
        }
        // Remove surrounding quotes
-       char* unquoted = strdup((yyvsp[0].str) + 1);
+       char* unquoted = rstrdup((yyvsp[0].str) + 1);
        unquoted[strlen(unquoted) - 1] = '\0';
        add_argument(current_command, unquoted);
-       free(unquoted);
+       rfree(unquoted);
+       rfree((yyvsp[0].str));  // Free the original allocated string
    }
-#line 1544 "parser.tab.c"
+#line 1514 "parser.tab.c"
     break;
 
-  case 30:
-#line 177 "parser.y"
+  case 28:
+#line 160 "parser.y"
         {
             if (current_command == NULL) {
                 current_command = create_command();
             }
             add_argument(current_command, (yyvsp[0].str));
+            rfree((yyvsp[0].str));  // Free the allocated string
         }
-#line 1555 "parser.tab.c"
+#line 1526 "parser.tab.c"
+    break;
+
+  case 29:
+#line 170 "parser.y"
+           {
+               if (current_command == NULL) {
+                   current_command = create_command();
+               }
+               add_redirect(current_command, REDIRECT_INPUT, STDIN_FILENO, (yyvsp[0].str));
+               rfree((yyvsp[0].str));  // Free the allocated string
+           }
+#line 1538 "parser.tab.c"
+    break;
+
+  case 30:
+#line 178 "parser.y"
+           {
+               if (current_command == NULL) {
+                   current_command = create_command();
+               }
+               add_redirect(current_command, REDIRECT_INPUT_DUP, STDIN_FILENO, (yyvsp[0].str));
+               rfree((yyvsp[0].str));  // Free the allocated string
+           }
+#line 1550 "parser.tab.c"
     break;
 
   case 31:
@@ -1560,113 +1555,99 @@ yyreduce:
                if (current_command == NULL) {
                    current_command = create_command();
                }
-               add_redirect(current_command, REDIRECT_INPUT, STDIN_FILENO, (yyvsp[0].str));
+               add_redirect(current_command, REDIRECT_OUTPUT, STDOUT_FILENO, (yyvsp[0].str));
+               rfree((yyvsp[0].str));  // Free the allocated string
            }
-#line 1566 "parser.tab.c"
+#line 1562 "parser.tab.c"
     break;
 
   case 32:
-#line 193 "parser.y"
-           {
-               if (current_command == NULL) {
-                   current_command = create_command();
-               }
-               add_redirect(current_command, REDIRECT_INPUT_DUP, STDIN_FILENO, (yyvsp[0].str));
-           }
-#line 1577 "parser.tab.c"
-    break;
-
-  case 33:
-#line 200 "parser.y"
-           {
-               if (current_command == NULL) {
-                   current_command = create_command();
-               }
-               add_redirect(current_command, REDIRECT_OUTPUT, STDOUT_FILENO, (yyvsp[0].str));
-           }
-#line 1588 "parser.tab.c"
-    break;
-
-  case 34:
-#line 207 "parser.y"
+#line 194 "parser.y"
            {
                if (current_command == NULL) {
                    current_command = create_command();
                }
                add_redirect(current_command, REDIRECT_OUTPUT_DUP, STDOUT_FILENO, (yyvsp[0].str));
+               rfree((yyvsp[0].str));  // Free the allocated string
            }
-#line 1599 "parser.tab.c"
+#line 1574 "parser.tab.c"
     break;
 
-  case 35:
-#line 214 "parser.y"
+  case 33:
+#line 202 "parser.y"
            {
                if (current_command == NULL) {
                    current_command = create_command();
                }
                add_redirect(current_command, REDIRECT_APPEND, STDOUT_FILENO, (yyvsp[0].str));
+               rfree((yyvsp[0].str));  // Free the allocated string
            }
-#line 1610 "parser.tab.c"
+#line 1586 "parser.tab.c"
     break;
 
-  case 36:
-#line 221 "parser.y"
+  case 34:
+#line 210 "parser.y"
            {
                if (current_command == NULL) {
                    current_command = create_command();
                }
                add_redirect(current_command, REDIRECT_INPUT, STDIN_FILENO, (yyvsp[0].str));
                add_redirect(current_command, REDIRECT_OUTPUT, STDOUT_FILENO, (yyvsp[0].str));
+               rfree((yyvsp[0].str));  // Free the allocated string
            }
-#line 1622 "parser.tab.c"
+#line 1599 "parser.tab.c"
     break;
 
-  case 37:
-#line 229 "parser.y"
+  case 35:
+#line 219 "parser.y"
            {
                if (current_command == NULL) {
                    current_command = create_command();
                }
                add_redirect(current_command, REDIRECT_APPEND_DUP, STDOUT_FILENO, (yyvsp[0].str));
+               rfree((yyvsp[0].str));  // Free the allocated string
            }
-#line 1633 "parser.tab.c"
+#line 1611 "parser.tab.c"
     break;
 
-  case 38:
-#line 236 "parser.y"
+  case 36:
+#line 227 "parser.y"
            {
                if (current_command == NULL) {
                    current_command = create_command();
                }
                add_redirect(current_command, REDIRECT_INPUT, (yyvsp[-2].num), (yyvsp[0].str));
+               rfree((yyvsp[0].str));  // Free the allocated string
            }
-#line 1644 "parser.tab.c"
+#line 1623 "parser.tab.c"
     break;
 
-  case 39:
-#line 243 "parser.y"
+  case 37:
+#line 235 "parser.y"
            {
                if (current_command == NULL) {
                    current_command = create_command();
                }
                add_redirect(current_command, REDIRECT_OUTPUT, (yyvsp[-2].num), (yyvsp[0].str));
+               rfree((yyvsp[0].str));  // Free the allocated string
            }
-#line 1655 "parser.tab.c"
+#line 1635 "parser.tab.c"
     break;
 
-  case 40:
-#line 250 "parser.y"
+  case 38:
+#line 243 "parser.y"
            {
                if (current_command == NULL) {
                    current_command = create_command();
                }
                add_redirect(current_command, REDIRECT_APPEND, (yyvsp[-2].num), (yyvsp[0].str));
+               rfree((yyvsp[0].str));  // Free the allocated string
            }
-#line 1666 "parser.tab.c"
+#line 1647 "parser.tab.c"
     break;
 
 
-#line 1670 "parser.tab.c"
+#line 1651 "parser.tab.c"
 
       default: break;
     }
@@ -1898,7 +1879,7 @@ yyreturn:
 #endif
   return yyresult;
 }
-#line 258 "parser.y"
+#line 252 "parser.y"
 
 
 void yyerror(const char* s) {

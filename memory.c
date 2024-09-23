@@ -1,7 +1,11 @@
 #include <stdio.h>
+#include <unistd.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <string.h>
+#include <errno.h>
 #include "memory.h"
+#include "error.h"
 
 int64_t total_memory_allocated = 0;
 int64_t total_memory_freed = 0;
@@ -153,4 +157,18 @@ char *rstrdup(const char *src) {
   }
   memcpy(dst, src, len);
   return dst;
+}
+
+char* rstrcat(char* dest, const char* src, size_t dest_size) {
+  size_t dest_len = strnlen(dest, dest_size);
+  size_t src_len = strnlen(src, dest_size - dest_len);
+    
+  if (dest_len + src_len >= dest_size) {
+    print_error("String concatenation would result in buffer overflow");
+    return NULL;
+  }
+    
+  strncat(dest + dest_len, src, src_len);
+  dest[dest_size - 1] = '\0';
+  return dest;
 }

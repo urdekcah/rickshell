@@ -14,6 +14,7 @@
 #include "memory.h"
 #include "file.h"
 #include "log.h"
+#include "job.h"
 
 #define INITIAL_BUFFER_SIZE (1 * 1024)  // 1 KB initial size
 #define MAX_BUFFER_SIZE (100 * 1024 * 1024)  // 100 MB limit

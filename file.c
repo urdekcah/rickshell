@@ -22,18 +22,19 @@ char* expand_home_directory(const char* path) {
     snprintf(expanded_path, len, "%s%s", home, path + 1); 
     return expanded_path;
   }
-  return strdup(path);
+  return rstrdup(path);
 }
 
 int ensure_directory_exist(const char *dir_path) {
   struct stat st;
   char* expanded_path = expand_home_directory(dir_path);
 
-  if (stat(dir_path, &st) == 0 && S_ISDIR(st.st_mode)) {
+  if (stat(expanded_path, &st) == 0 && S_ISDIR(st.st_mode)) {
+    rfree(expanded_path);
     return 0;
   }
 
-  char *parent_path = strdup(expanded_path);
+  char *parent_path = rstrdup(expanded_path);
   char *last_slash = strrchr(parent_path, '/');
   
   if (last_slash != NULL && last_slash != parent_path) {
@@ -45,6 +46,7 @@ int ensure_directory_exist(const char *dir_path) {
     if (errno != EEXIST) {
       perror("mkdir failed");
       rfree(parent_path);
+      rfree(expanded_path);
       return -1;
     }
   }

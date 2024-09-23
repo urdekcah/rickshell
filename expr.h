@@ -42,4 +42,5 @@ bool append_command_list(CommandList* dest, CommandList* src);
 void free_command(Command* cmd);
 void free_command_list(CommandList* list);
 void set_pipeline_background(CommandList* list);
+void set_command_background(Command* cmd);
 #endif /* __RICKSHELL_EXPR_H__ */

@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include "file.h"
+#include "memory.h"
 #include "log.h"
 
 #define MAX_LOG_MESSAGE_LENGTH 2048
@@ -137,8 +138,8 @@ static void check_file_size(void) {
 }
 
 static void format_log_message(char* buffer, size_t buffer_size, const char* format, 
-                 const char* level_str, const char* file, int line, 
-                 const char* func, const char* message) {
+                               const char* level_str, const char* file, int line, 
+                               const char* func, const char* message) {
   time_t now;
   time(&now);
   struct tm* time_info = localtime(&now);

@@ -5,6 +5,7 @@
 #include <sys/wait.h>
 #include <signal.h>
 #include "job.h"
+#include "expr.h"
 #include "pipeline.h"
 #include "memory.h"
 #include "error.h"
@@ -174,4 +175,5 @@ void print_job_status(void) {
       job = job->next;
     }
   }
+  (void)prev;
 }

@@ -28,4 +28,5 @@ int execute_background_job(CommandList* cmds, const char* command_line);
 void print_jobs(void);
 void cleanup_jobs(void);
 void print_job_status(void);
+void check_background_jobs(void);
 #endif /* __RICKSHELL_JOB_H__ */
