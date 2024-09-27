@@ -100,7 +100,7 @@ int builtin_cd(Command *cmd) {
   int print_new_dir = 0;
   const char *dir = NULL;
 
-  for (int i = 1; i < cmd->argv.size; i++) {
+  for (size_t i = 1; i < cmd->argv.size; i++) {
     if (strcmp(cmd->argv.data[i], "-L") == 0) {
       follow_symlinks = 1;
       physical = 0;

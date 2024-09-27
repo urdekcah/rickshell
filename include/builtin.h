@@ -10,6 +10,7 @@ typedef struct {
 } builtin_command;
 
 int builtin_cd(Command* cmd);
+int builtin_echo(Command *cmd);
 
 int execute_builtin(Command* cmd);
 builtin_func get_builtin_func(const char* name);
