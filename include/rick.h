@@ -2,4 +2,4 @@
 #define __RICKSHELL_RICK_H__
 typedef struct Redirect Redirect;
 typedef enum   RedirectType RedirectType;
-#endif
+#endif /* __RICKSHELL_RICK_H__ */

@@ -1,20 +1,32 @@
 CC=gcc
-CFLAGS=-Wall -Wextra
-LDFLAGS=
+CFLAGS=-Wall -Wextra -Iinclude
+LDFLAGS=-static -Wl,--warn-common
+AR=ar
+ARFLAGS=rcs
 
-SRCS=main.c error.c execute.c expr.c file.c job.c parser.tab.c lex.yy.c log.c memory.c pipeline.c redirect.c
+BUILTIN_SRCS=$(wildcard builtin/*.c)
+BUILTIN_OBJS=$(BUILTIN_SRCS:.c=.o)
+BUILTIN_LIB=lib/libbuiltin.a
+
+SRCS=main.c builtin.c error.c execute.c expr.c file.c job.c parser.tab.c lex.yy.c log.c memory.c pipeline.c redirect.c
 OBJS=$(SRCS:.c=.o)
+
 TARGET=rickshell
 
-all: $(TARGET)
+all: $(BUILTIN_LIB) $(TARGET)
 
-$(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -g
+$(BUILTIN_LIB): $(BUILTIN_OBJS)
+	@mkdir -p lib
+	$(AR) $(ARFLAGS) $@ $^
+
+$(TARGET): $(OBJS) $(BUILTIN_LIB)
+	$(CC) $(CFLAGS) -o $@ $(OBJS) $(BUILTIN_LIB) $(LDFLAGS)
 
 %.o: %.c
-	$(CC) $(CFLAGS) -c $< -g
+	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(OBJS) $(TARGET)
+	rm -f $(OBJS) $(BUILTIN_OBJS) $(TARGET) $(BUILTIN_LIB)
+	rm -rf lib
 
 .PHONY: all clean

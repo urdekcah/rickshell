@@ -7,6 +7,7 @@
 #include <sys/wait.h>
 #include <errno.h>
 #include "expr.h"
+#include "builtin.h"
 #include "pipeline.h"
 #include "redirect.h"
 #include "execute.h"
@@ -28,6 +29,10 @@ int execute_command(Command* cmd) {
     print_error("Invalid command");
     return -1;
   }
+
+  int builtin_result = execute_builtin(cmd);
+  if (builtin_result != -1)
+    return builtin_result;
 
   pid_t pid = fork();
   if (pid == -1) {
