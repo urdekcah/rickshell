@@ -7,4 +7,5 @@
 int execute_command(Command* cmd);
 int execute_command_list(CommandList* list);
 int parse_and_execute(const char* input);
+char* command_to_string(Command* cmd);
 #endif /* __RICKSHELL_EXECUTE_H__ */

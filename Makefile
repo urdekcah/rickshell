@@ -8,7 +8,7 @@ BUILTIN_SRCS=$(wildcard builtin/*.c)
 BUILTIN_OBJS=$(BUILTIN_SRCS:.c=.o)
 BUILTIN_LIB=lib/libbuiltin.a
 
-SRCS=main.c builtin.c error.c execute.c expr.c file.c job.c parser.tab.c lex.yy.c log.c memory.c pipeline.c redirect.c
+SRCS=main.c builtin.c error.c execute.c expr.c file.c job.c parser.tab.c lex.yy.c log.c memory.c pipeline.c redirect.c variable.c
 OBJS=$(SRCS:.c=.o)
 
 TARGET=rickshell

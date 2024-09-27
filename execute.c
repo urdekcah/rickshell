@@ -14,6 +14,7 @@
 #include "job.h"
 #include "memory.h"
 #include "error.h"
+#include "variable.h"
 
 extern int yyparse(void);
 extern int yylex_destroy(void);
@@ -23,11 +24,37 @@ extern void yy_scan_string(const char *str);
 #define MAX_COMMAND_LENGTH 1024
 
 extern CommandList* command_list;
+extern VariableTable* variable_table;
 
 int execute_command(Command* cmd) {
   if (cmd == NULL || cmd->argv.data == NULL || cmd->argv.data[0] == NULL) {
     print_error("Invalid command");
     return -1;
+  }
+
+  for (int i = 0; cmd->argv.data[i] != NULL; i++) {
+    char* expanded = expand_variables(variable_table, cmd->argv.data[i]);
+    rfree(cmd->argv.data[i]);
+    cmd->argv.data[i] = expanded;
+  }
+
+  char* equals_sign = strchr(cmd->argv.data[0], '=');
+  if (equals_sign != NULL) {
+    *equals_sign = '\0';
+    const char* name = cmd->argv.data[0];
+    const char* value = equals_sign + 1;
+    
+    if (*value == '\0' && cmd->argv.data[1] != NULL)
+      value = cmd->argv.data[1];
+    
+    Variable* var = set_variable(variable_table, name, value, false);
+    if (var == NULL) {
+      print_error("Failed to set variable");
+      return -1;
+    }
+    
+    *equals_sign = '=';
+    return 0;
   }
 
   int builtin_result = execute_builtin(cmd);
