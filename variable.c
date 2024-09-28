@@ -554,3 +554,13 @@ void set_array_variable(VariableTable* table, const char* name, char** values, i
     var->array_values[i] = rstrdup(values[i]);
   }
 }
+
+bool do_not_expand_this_builtin(const char* name) {
+  char* do_not_expand[] = {"readonly"};
+  for (int i = 0; (unsigned long)i < sizeof(do_not_expand) / sizeof(char*); i++) {
+    if (strcmp(name, do_not_expand[i]) == 0) {
+      return true;
+    }
+  }
+  return false;
+}

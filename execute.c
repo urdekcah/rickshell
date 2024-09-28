@@ -38,8 +38,9 @@ int execute_command(Command* cmd) {
     cmd->argv.data[i] = expanded;
   }
 
+  bool should_not_expand = do_not_expand_this_builtin(cmd->argv.data[0]);
   char* equals_sign = strchr(cmd->argv.data[0], '=');
-  if (equals_sign != NULL) {
+  if (equals_sign != NULL && !should_not_expand) {
     *equals_sign = '\0';
     const char* name = cmd->argv.data[0];
     const char* value = equals_sign + 1;
@@ -55,6 +56,29 @@ int execute_command(Command* cmd) {
     
     *equals_sign = '=';
     return 0;
+  } else if (should_not_expand) {
+    char** new_data = rcalloc(cmd->argv.capacity, sizeof(char*));
+    size_t new_size = 0;
+    for (int i = 0; cmd->argv.data[i] != NULL; i++) {
+      int len = strlen(cmd->argv.data[i]);
+      if (len > 0 && cmd->argv.data[i][len - 1] == '=') {
+        if (cmd->argv.data[i + 1] != NULL) {
+          int new_len = len + strlen(cmd->argv.data[i + 1]) + 1;
+          new_data[new_size] = rcalloc(new_len, sizeof(char));
+          snprintf(new_data[new_size], new_len, "%s%s", cmd->argv.data[i], cmd->argv.data[i + 1]);
+          i++;
+        } else {
+          new_data[new_size] = rstrdup(cmd->argv.data[i]);
+        }
+        new_size++;
+      } else {
+        new_data[new_size] = rstrdup(cmd->argv.data[i]);
+        new_size++;
+      }
+    }
+    rfree(cmd->argv.data);
+    cmd->argv.data = new_data;
+    cmd->argv.size = new_size;
   }
 
   int builtin_result = execute_builtin(cmd);

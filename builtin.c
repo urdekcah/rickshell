@@ -5,6 +5,7 @@
 static builtin_command builtin_commands[] = {
   {"cd", builtin_cd},
   {"echo", builtin_echo},
+  {"readonly", builtin_readonly},
   {NULL, NULL}
 };
 

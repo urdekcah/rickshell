@@ -7,6 +7,9 @@ typedef struct {
   char* value;
   bool readonly;
   bool is_array;
+  bool is_indexed_array;
+  bool is_associative_array;
+  bool is_function;
   char** array_values;
   int array_size;
 } Variable;
@@ -23,6 +26,7 @@ Variable* set_variable(VariableTable* table, const char* name, const char* value
 Variable* get_variable(VariableTable* table, const char* name);
 void unset_variable(VariableTable* table, const char* name);
 char* expand_variables(VariableTable* table, const char* input);
+bool do_not_expand_this_builtin(const char* name);
 void export_variable(VariableTable* table, const char* name);
 void set_array_variable(VariableTable* table, const char* name, char** values, int size);
 void init_variables();
