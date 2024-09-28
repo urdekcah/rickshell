@@ -6,6 +6,7 @@
 #include "variable.h"
 #include "error.h"
 #include "expr.h"
+#include "memory.h"
 
 extern VariableTable* variable_table;
 

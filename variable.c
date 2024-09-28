@@ -205,10 +205,29 @@ static char* remove_suffix(const char* str, const char* suffix, bool greedy) {
   return result;
 }
 
+char* dynstrcpy(char** dest, size_t* dest_size, size_t* dest_len, const char* src) {
+  size_t src_len = strlen(src);
+  size_t new_len = *dest_len + src_len;
+
+  if (new_len >= *dest_size) {
+    size_t new_size = *dest_size;
+    while (new_size <= new_len) {
+      new_size *= 2;
+    }
+    *dest = rrealloc(*dest, new_size);
+    *dest_size = new_size;
+  }
+
+  strcpy(*dest + *dest_len, src);
+  *dest_len = new_len;
+
+  return *dest;
+}
+
 char* expand_variables(VariableTable* table, const char* input) {
-  size_t result_size = strlen(input) * 2;
+  size_t result_size = 10;
+  size_t result_len = 0;
   char* result = rmalloc(result_size);
-  char* output = result;
   const char* p = input;
 
   while (*p) {
@@ -239,9 +258,7 @@ char* expand_variables(VariableTable* table, const char* input) {
                 int length = strlen(var->value);
                 char length_str[20];
                 snprintf(length_str, sizeof(length_str), "%d", length);
-
-                strcpy(output, length_str);
-                output += strlen(length_str);
+                dynstrcpy(&result, &result_size, &result_len, length_str);
               }
             } else {
               char* position = strchr(var_name, '#');
@@ -257,8 +274,7 @@ char* expand_variables(VariableTable* table, const char* input) {
                   char* value = rstrdup(var->value);
                   char* new_value = remove_prefix(value, pattern, is_longest_match);
 
-                  strcpy(output, new_value);
-                  output += strlen(new_value);
+                  dynstrcpy(&result, &result_size, &result_len, new_value);
 
                   rfree(value);
                   rfree(new_value);
@@ -272,20 +288,18 @@ char* expand_variables(VariableTable* table, const char* input) {
               indirect_var_name[indirect_var_name_len - 1] = '\0';
               for (int i = 0; i < table->size; i++) {
                 if (strncmp(table->variables[i].name, indirect_var_name, strlen(indirect_var_name)) == 0) {
-                  strcpy(output, table->variables[i].name);
-                  output += strlen(table->variables[i].name);
-                  *output++ = ' ';
+                  dynstrcpy(&result, &result_size, &result_len, table->variables[i].name);
+                  dynstrcpy(&result, &result_size, &result_len, " ");
                 }
               }
-              if (output > result && *(output - 1) == ' ')
-                output--;
+              if (result_len > 0 && result[result_len - 1] == ' ')
+                result_len--;
             } else {
               Variable* indirect_var = get_variable(table, indirect_var_name);
               if (indirect_var) {
                 Variable* target_var = get_variable(table, indirect_var->value);
                 if (target_var) {
-                  strcpy(output, target_var->value);
-                  output += strlen(target_var->value);
+                  dynstrcpy(&result, &result_size, &result_len, target_var->value);
                 }
               }
             }
@@ -312,8 +326,7 @@ char* expand_variables(VariableTable* table, const char* input) {
                   }
                 }
               }
-              strcpy(output, value);
-              output += strlen(value);
+              dynstrcpy(&result, &result_size, &result_len, value);
               rfree(value);
             }
           } else if (comma) {
@@ -328,8 +341,7 @@ char* expand_variables(VariableTable* table, const char* input) {
               } else {
                 *value = tolower(*value);
               }
-              strcpy(output, value);
-              output += strlen(value);
+              dynstrcpy(&result, &result_size, &result_len, value);
               rfree(value);
             }
           } else if (colon) {
@@ -349,14 +361,15 @@ char* expand_variables(VariableTable* table, const char* input) {
               if (length_str) {
                 long length = strtol(length_str, NULL, 10);
                 if (offset >= 0 && length > 0 && offset + length <= (long)var_len) {
-                  strncpy(output, var->value + offset, length);
-                  output[length] = '\0';
-                  output += length;
+                  char* temp = rmalloc(length + 1);
+                  strncpy(temp, var->value + offset, length);
+                  temp[length] = '\0';
+                  dynstrcpy(&result, &result_size, &result_len, temp);
+                  rfree(temp);
                 }
               } else {
                 if (offset >= 0 && offset < (long)var_len) {
-                  strcpy(output, var->value + offset);
-                  output += strlen(var->value + offset);
+                  dynstrcpy(&result, &result_size, &result_len, var->value + offset);
                 }
               }
             }
@@ -365,24 +378,21 @@ char* expand_variables(VariableTable* table, const char* input) {
             Variable* var = get_variable(table, var_name);
             if (var) {
               if (*(at + 1) == 'Q') {
-                *output++ = '\'';
+                dynstrcpy(&result, &result_size, &result_len, "'");
                 for (char* c = var->value; *c; c++) {
                   if (*c == '\'') {
-                    *output++ = '\'';
-                    *output++ = '\\';
-                    *output++ = '\'';
-                    *output++ = '\'';
+                    dynstrcpy(&result, &result_size, &result_len, "'\\''");
                   } else {
-                    *output++ = *c;
+                    char temp[2] = {*c, '\0'};
+                    dynstrcpy(&result, &result_size, &result_len, temp);
                   }
                 }
-                *output++ = '\'';
+                dynstrcpy(&result, &result_size, &result_len, "'");
               } else if (*(at + 1) == 'E') {
-                int result = parse_and_execute(var->value);
+                int temp = parse_and_execute(var->value);
                 char exit_status[20];
-                snprintf(exit_status, sizeof(exit_status), "%d", result);
-                strcpy(output, exit_status);
-                output += strlen(exit_status);
+                snprintf(exit_status, sizeof(exit_status), "%d", temp);
+                dynstrcpy(&result, &result_size, &result_len, exit_status);
               }
             }
           } else if (colon && (*(colon + 1) == '-' || *(colon + 1) == '=' || *(colon + 1) == '+')) {
@@ -393,19 +403,16 @@ char* expand_variables(VariableTable* table, const char* input) {
             Variable* var = get_variable(table, var_name);
             if (operation == '+') {
               if (var && var->value && strlen(var->value) > 0) {
-                strcpy(output, value);
-                output += strlen(value);
+                dynstrcpy(&result, &result_size, &result_len, value);
               }
             } else {
               if (!var || !var->value || strlen(var->value) == 0) {
                 if (operation == '=') {
                   var = set_variable(table, var_name, value, false);
                 }
-                strcpy(output, value);
-                output += strlen(value);
+                dynstrcpy(&result, &result_size, &result_len, value);
               } else {
-                strcpy(output, var->value);
-                output += strlen(var->value);
+                dynstrcpy(&result, &result_size, &result_len, var->value);
               }
             }
           } else if (question) {
@@ -416,8 +423,7 @@ char* expand_variables(VariableTable* table, const char* input) {
             if (!var || !var->value || strlen(var->value) == 0) {
               print_error(error_message);
             } else {
-              strcpy(output, var->value);
-              output += strlen(var->value);
+              dynstrcpy(&result, &result_size, &result_len, var->value);
             }
           } else if (slash) {
             *slash = '\0';
@@ -433,28 +439,19 @@ char* expand_variables(VariableTable* table, const char* input) {
               
               if (var) {
                 char* new_value = str_replace(var->value, pattern, replacement, replace_all);
-                size_t new_len = strlen(new_value);
-                if (output - result + new_len >= result_size) {
-                  size_t current_len = output - result;
-                  result_size *= 2;
-                  result = rrealloc(result, result_size);
-                  output = result + current_len;
-                }
-                strcpy(output, new_value);
-                output += new_len;
+                dynstrcpy(&result, &result_size, &result_len, new_value);
                 rfree(new_value);
               }
             } else {
               if (var) {
-                char* result = rstrdup(var->value);
-                char* pos = result;
+                char* temp_result = rstrdup(var->value);
+                char* pos = temp_result;
                 while ((pos = strstr(pos, pattern)) != NULL) {
                   memmove(pos, pos + strlen(pattern), strlen(pos + strlen(pattern)) + 1);
                   if (!replace_all) break;
                 }
                 
-                strcpy(output, result);
-                output += strlen(result);
+                dynstrcpy(&result, &result_size, &result_len, temp_result);
                 rfree(result);
               }
             }
@@ -466,15 +463,13 @@ char* expand_variables(VariableTable* table, const char* input) {
               bool greedy = (*(percent + 1) == '%');
               if (greedy) pattern++;
               char* new_value = remove_suffix(var->value, pattern, greedy);
-              strcpy(output, new_value);
-              output += strlen(new_value);
+              dynstrcpy(&result, &result_size, &result_len, new_value);
               rfree(new_value);
             }
           } else {
             Variable* var = get_variable(table, var_name);
             if (var) {
-              strcpy(output, var->value);
-              output += strlen(var->value);
+              dynstrcpy(&result, &result_size, &result_len, var->value);
             }
           }
           rfree(var_name);
@@ -484,13 +479,11 @@ char* expand_variables(VariableTable* table, const char* input) {
       } else if (*(p + 1) == '?') {
         char exit_status[20];
         snprintf(exit_status, sizeof(exit_status), "%d", WEXITSTATUS(system(NULL)));
-        strcpy(output, exit_status);
-        output += strlen(exit_status);
+        dynstrcpy(&result, &result_size, &result_len, exit_status);
         p += 2;
         continue;
       } else if (*(p + 1) == '!') {
-        strcpy(output, "LAST_BG_PID");
-        output += strlen("LAST_BG_PID");
+        dynstrcpy(&result, &result_size, &result_len, "LAST_BG_PID");
         p += 2;
         continue;
       } else if (isalpha(*(p + 1)) || *(p + 1) == '_') {
@@ -505,17 +498,17 @@ char* expand_variables(VariableTable* table, const char* input) {
 
         Variable* var = get_variable(table, var_name);
         if (var) {
-          strcpy(output, var->value);
-          output += strlen(var->value);
+          dynstrcpy(&result, &result_size, &result_len, var->value);
         }
         rfree(var_name);
         p = var_end;
         continue;
       }
     }
-    *output++ = *p++;
+    char temp[2] = {*p, '\0'};
+    dynstrcpy(&result, &result_size, &result_len, temp);
+    p++;
   }
-  *output = '\0';
 
   return result;
 }
