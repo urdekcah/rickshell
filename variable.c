@@ -5,6 +5,8 @@
 #include "variable.h"
 #include "memory.h"
 #include "error.h"
+#include "expr.h"
+#include "execute.h"
 
 #define INITIAL_TABLE_SIZE 10
 
@@ -102,13 +104,6 @@ void unset_variable(VariableTable* table, const char* name) {
   }
 }
 
-static char* substring(const char* str, int start, int length) {
-  char* result = rmalloc(length + 1);
-  strncpy(result, str + start, length);
-  result[length] = '\0';
-  return result;
-}
-
 static char* str_replace(const char* src, const char* old, const char* new, bool replace_all) {
   char* result;
   int i, cnt = 0;
@@ -181,8 +176,133 @@ char* expand_variables(VariableTable* table, const char* input) {
           char* slash = strchr(var_name, '/');
           char* percent = strchr(var_name, '%');
           char* question = strchr(var_name, '?');
+          char* exclamation = strchr(var_name, '!');
+          char* caret = strchr(var_name, '^');
+          char* comma = strchr(var_name, ',');
+          char* at = strchr(var_name, '@');
 
-          if (colon && (*(colon + 1) == '-' || *(colon + 1) == '=' || *(colon + 1) == '+')) {
+          printf("var_name: %s\n", var_name);
+          if (exclamation) {
+            char* indirect_var_name = var_name + 1;
+            int indirect_var_name_len = strlen(indirect_var_name);
+            if (indirect_var_name[indirect_var_name_len - 1] == '*' || indirect_var_name[indirect_var_name_len - 1] == '@') {
+              indirect_var_name[indirect_var_name_len - 1] = '\0';
+              for (int i = 0; i < table->size; i++) {
+                if (strncmp(table->variables[i].name, indirect_var_name, strlen(indirect_var_name)) == 0) {
+                  strcpy(output, table->variables[i].name);
+                  output += strlen(table->variables[i].name);
+                  *output++ = ' ';
+                }
+              }
+              if (output > result && *(output - 1) == ' ')
+                output--;
+            } else {
+              Variable* indirect_var = get_variable(table, indirect_var_name);
+              if (indirect_var) {
+                Variable* target_var = get_variable(table, indirect_var->value);
+                if (target_var) {
+                  strcpy(output, target_var->value);
+                  output += strlen(target_var->value);
+                }
+              }
+            }
+          } else if (caret) {
+            *caret = '\0';
+            Variable* var = get_variable(table, var_name);
+            if (var) {
+              char* value = rstrdup(var->value);
+              char* pattern = (*(caret + 1) == '^') ? caret + 2 : caret + 1;
+              bool convert_all = (*(caret + 1) == '^');
+              
+              if (*pattern == '\0') {
+                for (char* c = value; *c; c++) {
+                  if (convert_all || c == value) {
+                    *c = toupper(*c);
+                  }
+                }
+              } else {
+                for (char* c = value; *c; c++) {
+                  if (strchr(pattern, *c) != NULL) {
+                    if (convert_all || c == value) {
+                      *c = toupper(*c);
+                    }
+                  }
+                }
+              }
+              strcpy(output, value);
+              output += strlen(value);
+              rfree(value);
+            }
+          } else if (comma) {
+            *comma = '\0';
+            Variable* var = get_variable(table, var_name);
+            if (var) {
+              char* value = rstrdup(var->value);
+              if (*(comma + 1) == ',') {
+                for (char* c = value; *c; c++) {
+                  *c = tolower(*c);
+                }
+              } else {
+                *value = tolower(*value);
+              }
+              strcpy(output, value);
+              output += strlen(value);
+              rfree(value);
+            }
+          } else if (colon) {
+            *colon = '\0';
+            Variable* var = get_variable(table, var_name);
+            if (var) {
+              char* endptr;
+              long offset = strtol(colon + 1, &endptr, 10);
+              char* length_str = (*endptr == ':') ? endptr + 1 : NULL;
+
+              int var_len = strlen(var->value);
+              
+              if (offset < 0) {
+                offset = var_len + offset;
+              }
+
+              if (length_str) {
+                long length = strtol(length_str, NULL, 10);
+                if (offset >= 0 && length > 0 && offset + length <= (long)var_len) {
+                  strncpy(output, var->value + offset, length);
+                  output[length] = '\0';
+                  output += length;
+                }
+              } else {
+                if (offset >= 0 && offset < (long)var_len) {
+                  strcpy(output, var->value + offset);
+                  output += strlen(var->value + offset);
+                }
+              }
+            }
+          } else if (at) {
+            *at = '\0';
+            Variable* var = get_variable(table, var_name);
+            if (var) {
+              if (*(at + 1) == 'Q') {
+                *output++ = '\'';
+                for (char* c = var->value; *c; c++) {
+                  if (*c == '\'') {
+                    *output++ = '\'';
+                    *output++ = '\\';
+                    *output++ = '\'';
+                    *output++ = '\'';
+                  } else {
+                    *output++ = *c;
+                  }
+                }
+                *output++ = '\'';
+              } else if (*(at + 1) == 'E') {
+                int result = parse_and_execute(var->value);
+                char exit_status[20];
+                snprintf(exit_status, sizeof(exit_status), "%d", result);
+                strcpy(output, exit_status);
+                output += strlen(exit_status);
+              }
+            }
+          } else if (colon && (*(colon + 1) == '-' || *(colon + 1) == '=' || *(colon + 1) == '+')) {
             *colon = '\0';
             char* value = colon + 2;
             char operation = *(colon + 1);
@@ -223,11 +343,11 @@ char* expand_variables(VariableTable* table, const char* input) {
             if (replace_all) pattern++;
             
             char* replacement = strchr(pattern, '/');
+            Variable* var = get_variable(table, var_name);
             if (replacement) {
               *replacement = '\0';
               replacement++;
               
-              Variable* var = get_variable(table, var_name);
               if (var) {
                 char* new_value = str_replace(var->value, pattern, replacement, replace_all);
                 size_t new_len = strlen(new_value);
@@ -241,23 +361,18 @@ char* expand_variables(VariableTable* table, const char* input) {
                 output += new_len;
                 rfree(new_value);
               }
-            }
-          } else if (colon) {
-            *colon = '\0';
-            Variable* var = get_variable(table, var_name);
-            if (var) {
-              int offset = atoi(colon + 1);
-              char* length_str = strchr(colon + 1, ':');
-              if (length_str) {
-                *length_str = '\0';
-                length_str++;
-                int length = atoi(length_str);
-                if (offset >= 0 && length > 0 && (size_t)(offset + length) <= strlen(var->value)) {
-                  char* substr = substring(var->value, offset, length);
-                  strcpy(output, substr);
-                  output += strlen(substr);
-                  rfree(substr);
+            } else {
+              if (var) {
+                char* result = rstrdup(var->value);
+                char* pos = result;
+                while ((pos = strstr(pos, pattern)) != NULL) {
+                  memmove(pos, pos + strlen(pattern), strlen(pos + strlen(pattern)) + 1);
+                  if (!replace_all) break;
                 }
+                
+                strcpy(output, result);
+                output += strlen(result);
+                rfree(result);
               }
             }
           } else if (hash) {
