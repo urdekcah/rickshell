@@ -138,6 +138,56 @@ static char* str_replace(const char* src, const char* old, const char* new, bool
   return result;
 }
 
+bool match_pattern(const char* str, const char* pattern) {
+  const char* s = str;
+  const char* p = pattern;
+  
+  while (*s && *p) {
+    if (*p == '*') {
+      p++;
+      if (*p == '\0') return true;
+      while (*s) {
+        if (match_pattern(s, p)) return true;
+        s++;
+      }
+      return false;
+    } else if (*p == '?' || *p == *s) {
+      s++;
+      p++;
+    } else {
+      return false;
+    }
+  }
+  
+  while (*p == '*') p++;
+  return *p == '\0';
+}
+
+char* remove_prefix(const char* value, const char* pattern, bool is_longest_match) {
+  int value_len = strlen(value);
+  const char* best_match = NULL;
+
+  if (is_longest_match) {
+    for (int i = 0; i < value_len; i++) {
+      if (match_pattern(value + i, pattern))
+        best_match = strchr(value + i, '.');
+    }
+  } else {
+    for (int i = 0; i < value_len; i++) {
+      if (match_pattern(value + i, pattern)) {
+        best_match = strchr(value + i, '.');
+        break;
+      }
+    }
+  }
+
+  if (best_match != NULL) {
+    return strdup(best_match);
+  }
+
+  return strdup(value);
+}
+
 static char* remove_suffix(const char* str, const char* suffix, bool greedy) {
   int suffix_len = strlen(suffix);
   int str_len = strlen(str);
@@ -181,8 +231,41 @@ char* expand_variables(VariableTable* table, const char* input) {
           char* comma = strchr(var_name, ',');
           char* at = strchr(var_name, '@');
 
-          printf("var_name: %s\n", var_name);
-          if (exclamation) {
+          if (hash) {
+            if (*var_name == '#') {
+              const char* var_name = hash + 1;
+              Variable* var = get_variable(table, var_name);
+              if (var) {
+                int length = strlen(var->value);
+                char length_str[20];
+                snprintf(length_str, sizeof(length_str), "%d", length);
+
+                strcpy(output, length_str);
+                output += strlen(length_str);
+              }
+            } else {
+              char* position = strchr(var_name, '#');
+              char* pattern_start = rstrdup(position+1);
+              var_name[position - var_name] = '\0';
+              
+              if (pattern_start) {
+                bool is_longest_match = (*(pattern_start) == '#');
+                const char* pattern = pattern_start + (is_longest_match ? 1 : 0);
+                
+                Variable* var = get_variable(table, var_name);
+                if (var) {
+                  char* value = rstrdup(var->value);
+                  char* new_value = remove_prefix(value, pattern, is_longest_match);
+
+                  strcpy(output, new_value);
+                  output += strlen(new_value);
+
+                  rfree(value);
+                  rfree(new_value);
+                }
+              }
+            }
+          } else if (exclamation) {
             char* indirect_var_name = var_name + 1;
             int indirect_var_name_len = strlen(indirect_var_name);
             if (indirect_var_name[indirect_var_name_len - 1] == '*' || indirect_var_name[indirect_var_name_len - 1] == '@') {
@@ -374,16 +457,6 @@ char* expand_variables(VariableTable* table, const char* input) {
                 output += strlen(result);
                 rfree(result);
               }
-            }
-          } else if (hash) {
-            *hash = '\0';
-            Variable* var = get_variable(table, hash + 1);
-            if (var) {
-              int length = strlen(var->value);
-              char length_str[20];
-              snprintf(length_str, sizeof(length_str), "%d", length);
-              strcpy(output, length_str);
-              output += strlen(length_str);
             }
           } else if (percent) {
             *percent = '\0';
