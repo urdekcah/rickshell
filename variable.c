@@ -102,6 +102,64 @@ void unset_variable(VariableTable* table, const char* name) {
   }
 }
 
+static char* substring(const char* str, int start, int length) {
+  char* result = rmalloc(length + 1);
+  strncpy(result, str + start, length);
+  result[length] = '\0';
+  return result;
+}
+
+static char* str_replace(const char* src, const char* old, const char* new, bool replace_all) {
+  char* result;
+  int i, cnt = 0;
+  int newlen = strlen(new);
+  int oldlen = strlen(old);
+
+  for (i = 0; src[i] != '\0'; i++) {
+    if (strstr(&src[i], old) == &src[i]) {
+      cnt++;
+      i += oldlen - 1;
+      if (!replace_all) break;
+    }
+  }
+
+  result = rmalloc(i + cnt * (newlen - oldlen) + 1);
+
+  i = 0;
+  while (*src) {
+    if (strstr(src, old) == src) {
+      strcpy(&result[i], new);
+      i += newlen;
+      src += oldlen;
+      if (!replace_all) {
+        strcat(result, src);
+        return result;
+      }
+    } else {
+      result[i++] = *src++;
+    }
+  }
+  result[i] = '\0';
+  return result;
+}
+
+static char* remove_suffix(const char* str, const char* suffix, bool greedy) {
+  int suffix_len = strlen(suffix);
+  int str_len = strlen(str);
+  char* result = rstrdup(str);
+
+  if (greedy) {
+    while (str_len >= suffix_len && strcmp(result + str_len - suffix_len, suffix) == 0) {
+      result[str_len - suffix_len] = '\0';
+      str_len -= suffix_len;
+    }
+  } else if (str_len >= suffix_len && strcmp(result + str_len - suffix_len, suffix) == 0) {
+    result[str_len - suffix_len] = '\0';
+  }
+
+  return result;
+}
+
 char* expand_variables(VariableTable* table, const char* input) {
   size_t result_size = strlen(input) * 2;
   char* result = rmalloc(result_size);
@@ -117,51 +175,155 @@ char* expand_variables(VariableTable* table, const char* input) {
           char* var_name = rmalloc(var_name_len + 1);
           strncpy(var_name, p + 2, var_name_len);
           var_name[var_name_len] = '\0';
-          Variable* var = get_variable(table, var_name);
-          if (var) {
-            size_t value_len = strlen(var->value);
-            if (output - result + value_len >= result_size) {
-              size_t current_len = output - result;
-              result_size *= 2;
-              result = rrealloc(result, result_size);
-              output = result + current_len;
+
+          char* colon = strchr(var_name, ':');
+          char* hash = strchr(var_name, '#');
+          char* slash = strchr(var_name, '/');
+          char* percent = strchr(var_name, '%');
+          char* question = strchr(var_name, '?');
+
+          if (colon && (*(colon + 1) == '-' || *(colon + 1) == '=' || *(colon + 1) == '+')) {
+            *colon = '\0';
+            char* value = colon + 2;
+            char operation = *(colon + 1);
+
+            Variable* var = get_variable(table, var_name);
+            if (operation == '+') {
+              if (var && var->value && strlen(var->value) > 0) {
+                strcpy(output, value);
+                output += strlen(value);
+              }
+            } else {
+              if (!var || !var->value || strlen(var->value) == 0) {
+                if (operation == '=') {
+                  var = set_variable(table, var_name, value, false);
+                }
+                strcpy(output, value);
+                output += strlen(value);
+              } else {
+                strcpy(output, var->value);
+                output += strlen(var->value);
+              }
             }
-            strcpy(output, var->value);
-            output += value_len;
+          } else if (question) {
+            *question = '\0';
+            char* error_message = question + 1;
+
+            Variable* var = get_variable(table, var_name);
+            if (!var || !var->value || strlen(var->value) == 0) {
+              print_error(error_message);
+            } else {
+              strcpy(output, var->value);
+              output += strlen(var->value);
+            }
+          } else if (slash) {
+            *slash = '\0';
+            char* pattern = slash + 1;
+            bool replace_all = (*pattern == '/');
+            if (replace_all) pattern++;
+            
+            char* replacement = strchr(pattern, '/');
+            if (replacement) {
+              *replacement = '\0';
+              replacement++;
+              
+              Variable* var = get_variable(table, var_name);
+              if (var) {
+                char* new_value = str_replace(var->value, pattern, replacement, replace_all);
+                size_t new_len = strlen(new_value);
+                if (output - result + new_len >= result_size) {
+                  size_t current_len = output - result;
+                  result_size *= 2;
+                  result = rrealloc(result, result_size);
+                  output = result + current_len;
+                }
+                strcpy(output, new_value);
+                output += new_len;
+                rfree(new_value);
+              }
+            }
+          } else if (colon) {
+            *colon = '\0';
+            Variable* var = get_variable(table, var_name);
+            if (var) {
+              int offset = atoi(colon + 1);
+              char* length_str = strchr(colon + 1, ':');
+              if (length_str) {
+                *length_str = '\0';
+                length_str++;
+                int length = atoi(length_str);
+                if (offset >= 0 && length > 0 && (size_t)(offset + length) <= strlen(var->value)) {
+                  char* substr = substring(var->value, offset, length);
+                  strcpy(output, substr);
+                  output += strlen(substr);
+                  rfree(substr);
+                }
+              }
+            }
+          } else if (hash) {
+            *hash = '\0';
+            Variable* var = get_variable(table, hash + 1);
+            if (var) {
+              int length = strlen(var->value);
+              char length_str[20];
+              snprintf(length_str, sizeof(length_str), "%d", length);
+              strcpy(output, length_str);
+              output += strlen(length_str);
+            }
+          } else if (percent) {
+            *percent = '\0';
+            char* pattern = percent + 1;
+            Variable* var = get_variable(table, var_name);
+            if (var) {
+              bool greedy = (*(percent + 1) == '%');
+              if (greedy) pattern++;
+              char* new_value = remove_suffix(var->value, pattern, greedy);
+              strcpy(output, new_value);
+              output += strlen(new_value);
+              rfree(new_value);
+            }
+          } else {
+            Variable* var = get_variable(table, var_name);
+            if (var) {
+              strcpy(output, var->value);
+              output += strlen(var->value);
+            }
           }
           rfree(var_name);
           p = end + 1;
           continue;
         }
-      } else if (isalnum(*(p + 1)) || *(p + 1) == '_') {
-        const char* end = p + 1;
-        while (isalnum(*end) || *end == '_') end++;
-        size_t var_name_len = end - (p + 1);
+      } else if (*(p + 1) == '?') {
+        char exit_status[20];
+        snprintf(exit_status, sizeof(exit_status), "%d", WEXITSTATUS(system(NULL)));
+        strcpy(output, exit_status);
+        output += strlen(exit_status);
+        p += 2;
+        continue;
+      } else if (*(p + 1) == '!') {
+        strcpy(output, "LAST_BG_PID");
+        output += strlen("LAST_BG_PID");
+        p += 2;
+        continue;
+      } else if (isalpha(*(p + 1)) || *(p + 1) == '_') {
+        const char* var_start = p + 1;
+        const char* var_end = var_start;
+        while (isalnum(*var_end) || *var_end == '_') var_end++;
+        
+        size_t var_name_len = var_end - var_start;
         char* var_name = rmalloc(var_name_len + 1);
-        strncpy(var_name, p + 1, var_name_len);
+        strncpy(var_name, var_start, var_name_len);
         var_name[var_name_len] = '\0';
+
         Variable* var = get_variable(table, var_name);
         if (var) {
-          size_t value_len = strlen(var->value);
-          if (output - result + value_len >= result_size) {
-            size_t current_len = output - result;
-            result_size *= 2;
-            result = rrealloc(result, result_size);
-            output = result + current_len;
-          }
           strcpy(output, var->value);
-          output += value_len;
+          output += strlen(var->value);
         }
         rfree(var_name);
-        p = end;
+        p = var_end;
         continue;
       }
-    }
-    if (output - result + 1 >= (long int)result_size) {
-      size_t current_len = output - result;
-      result_size *= 2;
-      result = rrealloc(result, result_size);
-      output = result + current_len;
     }
     *output++ = *p++;
   }

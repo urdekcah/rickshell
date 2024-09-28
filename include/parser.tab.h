@@ -51,20 +51,21 @@ extern int yydebug;
   {
     WORD = 258,
     QUOTED_STRING = 259,
-    PIPE = 260,
-    LESS = 261,
-    GREATER = 262,
-    DGREATER = 263,
-    LESSAND = 264,
-    GREATAND = 265,
-    LESSGREAT = 266,
-    DGREATAND = 267,
-    AMPERSAND = 268,
-    SEMICOLON = 269,
-    AND = 270,
-    OR = 271,
-    NEWLINE = 272,
-    IO_NUMBER = 273
+    PARAM_EXPANSION = 260,
+    PIPE = 261,
+    LESS = 262,
+    GREATER = 263,
+    DGREATER = 264,
+    LESSAND = 265,
+    GREATAND = 266,
+    LESSGREAT = 267,
+    DGREATAND = 268,
+    AMPERSAND = 269,
+    SEMICOLON = 270,
+    AND = 271,
+    OR = 272,
+    NEWLINE = 273,
+    IO_NUMBER = 274
   };
 #endif
 
@@ -79,7 +80,7 @@ union YYSTYPE
     Command* cmd;
     CommandList* cmd_list;
 
-#line 83 "parser.tab.h"
+#line 84 "parser.tab.h"
 
 };
 typedef union YYSTYPE YYSTYPE;
