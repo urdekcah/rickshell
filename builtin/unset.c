@@ -42,7 +42,7 @@ int builtin_unset(Command* cmd) {
     if (_unset_variable) {
       Variable* var = get_variable(variable_table, name);
       if (var) {
-        if (var->readonly) {
+        if (is_variable_flag_set(&var->flags, VarFlag_ReadOnly)) {
           fprintf(stderr, "unset: %s: cannot unset: readonly variable\n", name);
           exit_status = 1;
         } else {

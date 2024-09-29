@@ -12,7 +12,6 @@ extern VariableTable* variable_table;
 
 int builtin_readonly(Command *cmd) {
   bool display_all = false;
-  bool refer_to_functions = false;
   bool refer_to_indexed_array = false;
   bool refer_to_associative_array = false;
   int option_end = 1;
@@ -23,9 +22,6 @@ int builtin_readonly(Command *cmd) {
         switch (cmd->argv.data[i][j]) {
           case 'p':
             display_all = true;
-            break;
-          case 'f':
-            refer_to_functions = true;
             break;
           case 'a':
             refer_to_indexed_array = true;
@@ -50,14 +46,9 @@ int builtin_readonly(Command *cmd) {
   if (display_all) {
     for (int i = 0; i < variable_table->size; i++) {
       Variable *var = &variable_table->variables[i];
-      if (var->readonly) {
-        if ((refer_to_functions && var->is_function) ||
-          (!refer_to_functions && !var->is_function)) {
-          printf("readonly %s", var->name);
-          if (var->value) {
-            printf("=\"%s\"", var->value);
-          }
-          printf("\n");
+      if (is_variable_flag_set(&var->flags, VarFlag_ReadOnly)) {
+        for (int j = 0; j < var->array_size; j++) {
+          printf("readonly %s[%d]=%s\n", var->name, j, var->data._array[j]);
         }
       }
     }
@@ -80,16 +71,17 @@ int builtin_readonly(Command *cmd) {
     Variable *var = get_variable(variable_table, name);
     if (var) {
       if (value) {
-        if (var->readonly) {
+        if (is_variable_flag_set(&var->flags, VarFlag_ReadOnly)) {
           print_error("Cannot modify readonly variable");
           return 1;
         }
         rfree(var->value);
         var->value = rstrdup(value);
       }
-      var->readonly = true;
+      set_variable_flag(&var->flags, VarFlag_ReadOnly);
     } else {
-      var = set_variable(variable_table, name, value ? value : "", true);
+      value = value ? value : "";
+      var = set_variable(variable_table, name, value, parse_variable_type(value), true);
       if (var == NULL) {
         print_error("Failed to set readonly variable");
         return 1;
@@ -97,11 +89,9 @@ int builtin_readonly(Command *cmd) {
     }
     
     if (refer_to_indexed_array) {
-      var->is_indexed_array = true;
+      var->type = VAR_ARRAY;
     } else if (refer_to_associative_array) {
-      var->is_associative_array = true;
-    } else if (refer_to_functions) {
-      var->is_function = true;
+      var->type = VAR_ASSOCIATIVE_ARRAY;
     }
     
     if (equals) {

@@ -26,7 +26,7 @@ int builtin_set(Command* cmd) {
         value = cmd->argv.data[++i];
       }
 
-      Variable* var = set_variable(variable_table, name, value, false);
+      Variable* var = set_variable(variable_table, name, value, parse_variable_type(value), false);
       if (var == NULL) {
         print_error("Failed to set variable");
         return 0;

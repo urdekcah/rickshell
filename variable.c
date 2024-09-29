@@ -7,6 +7,8 @@
 #include "error.h"
 #include "expr.h"
 #include "execute.h"
+#include "strconv.h"
+#include "rstring.h"
 
 #define INITIAL_TABLE_SIZE 10
 
@@ -28,11 +30,11 @@ void free_variable_table(VariableTable* table) {
   for (int i = 0; i < table->size; i++) {
     rfree(table->variables[i].name);
     rfree(table->variables[i].value);
-    if (table->variables[i].is_array) {
+    if (table->variables[i].type == VAR_ARRAY || table->variables[i].type == VAR_ASSOCIATIVE_ARRAY) {
       for (int j = 0; j < table->variables[i].array_size; j++) {
-        rfree(table->variables[i].array_values[j]);
+        rfree(table->variables[i].data._array[j]);
       }
-      rfree(table->variables[i].array_values);
+      rfree(table->variables[i].data._array);
     }
   }
   rfree(table->variables);
@@ -44,17 +46,40 @@ static void expand_table(VariableTable* table) {
   table->variables = rrealloc(table->variables, table->capacity * sizeof(Variable));
 }
 
-Variable* set_variable(VariableTable* table, const char* name, const char* value, bool readonly) {
+Variable* set_variable(VariableTable* table, const char* name, const char* value, VariableType type, bool readonly) {
   for (int i = 0; i < table->size; i++) {
     if (strcmp(table->variables[i].name, name) == 0) {
-      if (table->variables[i].readonly) {
+      Variable* var = resolve_nameref(&table->variables[i]);
+      if (var == NULL) {
+        print_error("Failed to resolve nameref");
+        return NULL;
+      }
+
+      if (is_variable_flag_set(&var->flags, VarFlag_ReadOnly)) {
         print_error("Cannot modify readonly variable");
         return NULL;
       }
-      rfree(table->variables[i].value);
-      table->variables[i].value = rstrdup(value);
-      table->variables[i].readonly = readonly;
-      return &table->variables[i];
+      rfree(var->value);
+      var->value = rstrdup(value);
+      var->type = type;
+      if (readonly) set_variable_flag(&var->flags, VarFlag_ReadOnly);
+
+      switch (type) {
+      case VAR_STRING:
+        var->data._str = remove_quotes(value);
+        break;
+      case VAR_INTEGER:
+        StrconvResult result = ratoll(value, &var->data._number);
+        if (result.is_err) {
+          print_error("Failed to convert string to integer");
+          return NULL;
+        }
+        break;
+      default:
+        break;
+      }
+      
+      return var;
     }
   }
 
@@ -65,10 +90,15 @@ Variable* set_variable(VariableTable* table, const char* name, const char* value
   Variable* var = &table->variables[table->size++];
   var->name = rstrdup(name);
   var->value = rstrdup(value);
-  var->readonly = readonly;
-  var->is_array = false;
-  var->array_values = NULL;
+  var->type = type;
+  var->flags = 0;
   var->array_size = 0;
+  
+  if (type == VAR_INTEGER) {
+    var->data._number = atoi(value);
+  } else if (type == VAR_ARRAY || type == VAR_ASSOCIATIVE_ARRAY) {
+    var->data._array = NULL;
+  }
 
   return var;
 }
@@ -76,7 +106,10 @@ Variable* set_variable(VariableTable* table, const char* name, const char* value
 Variable* get_variable(VariableTable* table, const char* name) {
   for (int i = 0; i < table->size; i++) {
     if (strcmp(table->variables[i].name, name) == 0) {
-      return &table->variables[i];
+      Variable* var = &table->variables[i];
+      if (var->type == VAR_NAMEREF) 
+        return resolve_nameref(var);
+      return var;
     }
   }
   return NULL;
@@ -85,17 +118,17 @@ Variable* get_variable(VariableTable* table, const char* name) {
 void unset_variable(VariableTable* table, const char* name) {
   for (int i = 0; i < table->size; i++) {
     if (strcmp(table->variables[i].name, name) == 0) {
-      if (table->variables[i].readonly) {
+      if (is_variable_flag_set(&table->variables[i].flags, VarFlag_ReadOnly)) {
         print_error("Cannot unset readonly variable");
         return;
       }
       rfree(table->variables[i].name);
       rfree(table->variables[i].value);
-      if (table->variables[i].is_array) {
+      if (table->variables[i].type == VAR_ARRAY || table->variables[i].type == VAR_ASSOCIATIVE_ARRAY) {
         for (int j = 0; j < table->variables[i].array_size; j++) {
-          rfree(table->variables[i].array_values[j]);
+          rfree(table->variables[i].data._array[j]);
         }
-        rfree(table->variables[i].array_values);
+        rfree(table->variables[i].data._array);
       }
       memmove(&table->variables[i], &table->variables[i + 1], (table->size - i - 1) * sizeof(Variable));
       table->size--;
@@ -408,7 +441,7 @@ char* expand_variables(VariableTable* table, const char* input) {
             } else {
               if (!var || !var->value || strlen(var->value) == 0) {
                 if (operation == '=') {
-                  var = set_variable(table, var_name, value, false);
+                  var = set_variable(table, var_name, value, parse_variable_type(value), false);
                 }
                 dynstrcpy(&result, &result_size, &result_len, value);
               } else {
@@ -525,26 +558,26 @@ void export_variable(VariableTable* table, const char* name) {
 void set_array_variable(VariableTable* table, const char* name, char** values, int size) {
   Variable* var = get_variable(table, name);
   if (var) {
-    if (var->readonly) {
+    if (is_variable_flag_set(&var->flags, VarFlag_ReadOnly)) {
       print_error("Cannot modify readonly variable");
       return;
     }
-    if (var->is_array) {
+    if (var->type == VAR_ARRAY || var->type == VAR_ASSOCIATIVE_ARRAY) {
       for (int i = 0; i < var->array_size; i++) {
-        rfree(var->array_values[i]);
+        rfree(var->data._array[i]);
       }
-      rfree(var->array_values);
+      rfree(var->data._array);
     }
   } else {
-    var = set_variable(table, name, "", false);
+    var = set_variable(table, name, "", VAR_STRING, false);
   }
 
-  var->is_array = true;
-  var->array_values = rmalloc(size * sizeof(char*));
+  var->type = VAR_ARRAY;
+  var->data._array = rmalloc(size * sizeof(char*));
   var->array_size = size;
 
   for (int i = 0; i < size; i++) {
-    var->array_values[i] = rstrdup(values[i]);
+    var->data._array[i] = rstrdup(values[i]);
   }
 }
 
@@ -556,4 +589,57 @@ bool do_not_expand_this_builtin(const char* name) {
     }
   }
   return false;
+}
+
+VariableType parse_variable_type(const char* value) {
+  if (value == NULL || *value == '\0')
+    return VAR_STRING;
+  while (isspace(*value)) value++;
+  const char* end = value + strlen(value) - 1;
+  while (end > value && isspace(*end)) end--;
+  end++;
+  if ((value[0] == '"' && end[-1] == '"') || (value[0] == '\'' && end[-1] == '\''))
+    return VAR_STRING;
+  char* endptr;
+  strtol(value, &endptr, 10);
+  if (*endptr == '\0')
+    return VAR_INTEGER;
+  if (value[0] == '(' && end[-1] == ')')
+    return VAR_ARRAY;
+  if (value[0] == '{' && end[-1] == '}')
+    return VAR_ASSOCIATIVE_ARRAY;
+  return VAR_STRING;
+}
+
+Variable* resolve_nameref(Variable* var) {
+  if (var == NULL || var->type != VAR_NAMEREF) {
+    return var;
+  }
+  
+  Variable* resolved = NULL;
+  int depth = 0;
+  while (resolved != NULL && resolved->type == VAR_NAMEREF) {
+    if (depth++ > 100) {
+      print_error("Too many levels of indirection");
+      return NULL;
+    }
+    resolved = get_variable(variable_table, resolved->data._str);
+    if (resolved == NULL) {
+      print_error("Variable not found");
+      return NULL;
+    }
+  }
+  return resolved;
+}
+
+bool is_variable_flag_set(va_flag_t* vf, va_flag_t flag) {
+  return (*vf & flag) != 0;
+}
+
+void set_variable_flag(va_flag_t* vf, va_flag_t flag) {
+  *vf |= flag;
+}
+
+void unset_variable_flag(va_flag_t* vf, va_flag_t flag) {
+  *vf &= ~flag;
 }

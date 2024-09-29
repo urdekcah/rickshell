@@ -48,7 +48,7 @@ int execute_command(Command* cmd) {
     if (*value == '\0' && cmd->argv.data[1] != NULL)
       value = cmd->argv.data[1];
     
-    Variable* var = set_variable(variable_table, name, value, false);
+    Variable* var = set_variable(variable_table, name, value, parse_variable_type(value), false);
     if (var == NULL) {
       print_error("Failed to set variable");
       return -1;
