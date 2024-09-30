@@ -64,4 +64,8 @@ Variable* resolve_nameref(Variable* var);
 void export_variable(VariableTable* table, const char* name);
 void set_array_variable(VariableTable* table, const char* name, char** values, int size);
 void init_variables();
+void set_associative_array_variable(VariableTable* table, const char* name, const char* key, const char* value);
+char* va_value_to_string(const va_value_t* value);
+va_value_t string_to_va_value(const char* str, VariableType type);
+void free_va_value(va_value_t* value);
 #endif /* __RICKSHELL_VARIABLE_H__ */

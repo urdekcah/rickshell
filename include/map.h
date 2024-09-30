@@ -12,7 +12,6 @@ typedef struct {
   void* value;
   size_t value_size;
   bool is_occupied;
-  bool is_deleted;
 } map_kv;
 
 typedef struct {
@@ -37,5 +36,5 @@ MapResult resize_map(map* m, size_t new_capacity);
 MapResult map_insert(map* m, const char* key, void* value, size_t value_size);
 MapResult map_get(const map* m, const char* key, void* out_value, size_t* out_value_size);
 bool map_remove(map* m, const char* key);
-void free_map(map* m);
+void map_free(map* m);
 #endif /* __RICKSHELL_MAP_H__ */

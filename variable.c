@@ -75,6 +75,11 @@ Variable* set_variable(VariableTable* table, const char* name, const char* value
           return NULL;
         }
         break;
+      case VAR_ASSOCIATIVE_ARRAY:
+        if (var->data._map == NULL) {
+          var->data._map = create_map();
+        }
+        break;
       default:
         break;
       }
@@ -97,8 +102,10 @@ Variable* set_variable(VariableTable* table, const char* name, const char* value
   if (type == VAR_INTEGER) {
     var->data._number = atoi(value);
   } else if (type == VAR_ARRAY || type == VAR_ASSOCIATIVE_ARRAY) {
-    var->data._array = NULL;
+    var->data._map = create_map();
   }
+
+  if (readonly) set_variable_flag(&var->flags, VarFlag_ReadOnly);
 
   return var;
 }
@@ -273,6 +280,8 @@ char* expand_variables(VariableTable* table, const char* input) {
           strncpy(var_name, p + 2, var_name_len);
           var_name[var_name_len] = '\0';
 
+          char* open_bracket = strchr(var_name, '[');
+          char* close_bracket = strrchr(var_name, ']');
           char* colon = strchr(var_name, ':');
           char* hash = strchr(var_name, '#');
           char* slash = strchr(var_name, '/');
@@ -283,7 +292,23 @@ char* expand_variables(VariableTable* table, const char* input) {
           char* comma = strchr(var_name, ',');
           char* at = strchr(var_name, '@');
 
-          if (hash) {
+          if (open_bracket && close_bracket && open_bracket < close_bracket) {
+            *open_bracket = '\0';
+            *close_bracket = '\0';
+            char* key = open_bracket + 1;
+
+            Variable* var = get_variable(table, var_name);
+            if (var && var->type == VAR_ASSOCIATIVE_ARRAY) {
+              va_value_t value;
+              size_t value_size;
+              MapResult map_result = map_get(var->data._map, key, &value, &value_size);
+              if (!map_result.is_err) {
+                char* str_value = va_value_to_string(&value);
+                dynstrcpy(&result, &result_size, &result_len, str_value);
+                rfree(str_value);
+              }
+            }
+          } else if (hash) {
             if (*var_name == '#') {
               const char* var_name = hash + 1;
               Variable* var = get_variable(table, var_name);
@@ -642,4 +667,80 @@ void set_variable_flag(va_flag_t* vf, va_flag_t flag) {
 
 void unset_variable_flag(va_flag_t* vf, va_flag_t flag) {
   *vf &= ~flag;
+}
+
+void set_associative_array_variable(VariableTable* table, const char* name, const char* key, const char* value) {
+  Variable* var = get_variable(table, name);
+  if (var == NULL) {
+    var = set_variable(table, name, "", VAR_ASSOCIATIVE_ARRAY, false);
+  }
+
+  if (var->type != VAR_ASSOCIATIVE_ARRAY) {
+    print_error("Variable is not an associative array");
+    return;
+  }
+
+  va_value_t new_value = string_to_va_value(value, VAR_STRING);
+  map_insert(var->data._map, key, &new_value, sizeof(va_value_t));
+}
+
+char* va_value_to_string(const va_value_t* value) {
+  char* result = NULL;
+  switch (value->type) {
+    case VAR_STRING:
+      result = rstrdup(value->_str);
+      break;
+    case VAR_INTEGER:
+      result = rmalloc(32);
+      snprintf(result, 32, "%lld", value->_number);
+      break;
+    case VAR_ARRAY:
+    case VAR_ASSOCIATIVE_ARRAY:
+      result = rstrdup("(array)");
+      break;
+    default:
+      result = rstrdup("");
+      break;
+  }
+  return result;
+}
+
+va_value_t string_to_va_value(const char* str, VariableType type) {
+  va_value_t result;
+  result.type = type;
+  switch (type) {
+    case VAR_STRING:
+      result._str = rstrdup(str);
+      break;
+    case VAR_INTEGER:
+      result._number = atoll(str);
+      break;
+    case VAR_ARRAY:
+    case VAR_ASSOCIATIVE_ARRAY:
+      result._map = create_map();
+      break;
+    default:
+      result._str = rstrdup("");
+      break;
+  }
+  return result;
+}
+
+void free_va_value(va_value_t* value) {
+  switch (value->type) {
+    case VAR_STRING:
+      rfree(value->_str);
+      break;
+    case VAR_ARRAY:
+      for (int i = 0; value->_array[i] != NULL; i++) {
+        rfree(value->_array[i]);
+      }
+      rfree(value->_array);
+      break;
+    case VAR_ASSOCIATIVE_ARRAY:
+      map_free(value->_map);
+      break;
+    default:
+      break;
+  }
 }

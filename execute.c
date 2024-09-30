@@ -40,6 +40,8 @@ int execute_command(Command* cmd) {
 
   bool should_not_expand = do_not_expand_this_builtin(cmd->argv.data[0]);
   char* equals_sign = strchr(cmd->argv.data[0], '=');
+  char* open_bracket = strchr(cmd->argv.data[0], '[');
+  char* close_bracket = strrchr(cmd->argv.data[0], ']');
   if (equals_sign != NULL && !should_not_expand) {
     *equals_sign = '\0';
     const char* name = cmd->argv.data[0];
@@ -48,12 +50,19 @@ int execute_command(Command* cmd) {
     if (*value == '\0' && cmd->argv.data[1] != NULL)
       value = cmd->argv.data[1];
     
-    Variable* var = set_variable(variable_table, name, value, parse_variable_type(value), false);
-    if (var == NULL) {
-      print_error("Failed to set variable");
-      return -1;
+    if (open_bracket && close_bracket && open_bracket < close_bracket) {
+      *open_bracket = '\0';
+      *close_bracket = '\0';
+      char* key = open_bracket + 1;
+
+      set_associative_array_variable(variable_table, name, key, value);
+    } else {
+      Variable* var = set_variable(variable_table, name, value, parse_variable_type(value), false);
+      if (var == NULL) {
+        print_error("Failed to set variable");
+        return -1;
+      }
     }
-    
     *equals_sign = '=';
     return 0;
   } else if (should_not_expand) {
