@@ -234,6 +234,7 @@ int main(void) {
 
     yylex_destroy();
   }
+  cleanup_variables();
   log_info("Shell exited");
   log_shutdown();
 

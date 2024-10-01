@@ -744,3 +744,13 @@ void free_va_value(va_value_t* value) {
       break;
   }
 }
+
+void free_variable(Variable* var) {
+  rfree(var->name);
+  rfree(var->value);
+  free_va_value(&var->data);
+}
+
+void cleanup_variables() {
+  free_variable_table(variable_table);
+}
