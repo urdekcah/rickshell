@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include "rstring.h"
 #include "memory.h"
 
@@ -16,4 +17,24 @@ char* remove_quotes(const char* str) {
   }
     
   return rstrdup(str);
+}
+
+void ltrim(char* str) {
+  if (str == NULL) return;
+  
+  while (*str && isspace(*str)) str++;
+  memmove(str, str + strspn(str, " \t\r\n"), 1 + strlen(str + strspn(str, " \t\r\n")));
+}
+
+void rtrim(char* str) {
+  if (str == NULL) return;
+  
+  size_t len = strlen(str);
+  while (len > 0 && isspace(str[len - 1])) len--;
+  str[len] = '\0';
+}
+
+void trim(char* str) {
+  ltrim(str);
+  rtrim(str);
 }

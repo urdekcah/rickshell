@@ -7,6 +7,7 @@
 #include "error.h"
 #include "expr.h"
 #include "memory.h"
+#include "array.h"
 
 extern VariableTable* variable_table;
 
@@ -47,9 +48,7 @@ int builtin_readonly(Command *cmd) {
     for (int i = 0; i < variable_table->size; i++) {
       Variable *var = &variable_table->variables[i];
       if (is_variable_flag_set(&var->flags, VarFlag_ReadOnly)) {
-        for (int j = 0; j < var->array_size; j++) {
-          printf("readonly %s[%d]=%s\n", var->name, j, var->data._array[j]);
-        }
+        array_print(variable_table, var->name);
       }
     }
     return 0;

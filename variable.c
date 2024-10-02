@@ -30,12 +30,7 @@ void free_variable_table(VariableTable* table) {
   for (int i = 0; i < table->size; i++) {
     rfree(table->variables[i].name);
     rfree(table->variables[i].value);
-    if (table->variables[i].type == VAR_ARRAY || table->variables[i].type == VAR_ASSOCIATIVE_ARRAY) {
-      for (int j = 0; j < table->variables[i].array_size; j++) {
-        rfree(table->variables[i].data._array[j]);
-      }
-      rfree(table->variables[i].data._array);
-    }
+    free_va_value(&table->variables[i].data);
   }
   rfree(table->variables);
   rfree(table);
@@ -75,6 +70,10 @@ Variable* set_variable(VariableTable* table, const char* name, const char* value
           return NULL;
         }
         break;
+      case VAR_ARRAY:
+        if (var->data._array.data) array_free(&var->data._array);
+        parse_and_set_array(variable_table, name, value);
+        break;
       case VAR_ASSOCIATIVE_ARRAY:
         if (var->data._map == NULL) {
           var->data._map = create_map();
@@ -101,8 +100,10 @@ Variable* set_variable(VariableTable* table, const char* name, const char* value
   
   if (type == VAR_INTEGER) {
     var->data._number = atoi(value);
-  } else if (type == VAR_ARRAY || type == VAR_ASSOCIATIVE_ARRAY) {
+  } else if (type == VAR_ASSOCIATIVE_ARRAY) {
     var->data._map = create_map();
+  } else if (type == VAR_ARRAY) {
+    var->data._array = create_array(sizeof(va_value_t));
   }
 
   if (readonly) set_variable_flag(&var->flags, VarFlag_ReadOnly);
@@ -131,12 +132,7 @@ void unset_variable(VariableTable* table, const char* name) {
       }
       rfree(table->variables[i].name);
       rfree(table->variables[i].value);
-      if (table->variables[i].type == VAR_ARRAY || table->variables[i].type == VAR_ASSOCIATIVE_ARRAY) {
-        for (int j = 0; j < table->variables[i].array_size; j++) {
-          rfree(table->variables[i].data._array[j]);
-        }
-        rfree(table->variables[i].data._array);
-      }
+      free_va_value(&table->variables[i].data);
       memmove(&table->variables[i], &table->variables[i + 1], (table->size - i - 1) * sizeof(Variable));
       table->size--;
       return;
@@ -304,6 +300,19 @@ char* expand_variables(VariableTable* table, const char* input) {
               MapResult map_result = map_get(var->data._map, key, &value, &value_size);
               if (!map_result.is_err) {
                 char* str_value = va_value_to_string(&value);
+                dynstrcpy(&result, &result_size, &result_len, str_value);
+                rfree(str_value);
+              }
+            } else if (var && var->type == VAR_ARRAY) {
+              long long index;
+              StrconvResult sres = ratoll(key, &index);
+              if (sres.is_err) {
+                print_error("Invalid key for associative array");
+                return NULL;
+              }
+              if (index >= 0 && index < (long long)var->data._array.size) {
+                va_value_t* value = array_checked_get(var->data._array, index);
+                char* str_value = va_value_to_string(value);
                 dynstrcpy(&result, &result_size, &result_len, str_value);
                 rfree(str_value);
               }
@@ -571,6 +580,87 @@ char* expand_variables(VariableTable* table, const char* input) {
   return result;
 }
 
+void parse_and_set_array(VariableTable* table, const char* name, const char* value) {
+  char* trimmed_value = rstrdup(value + 1);
+  trimmed_value[strlen(trimmed_value) - 1] = '\0';
+  Variable* var = set_variable(table, name, "", VAR_ARRAY, false);
+
+  char* token;
+  char* rest = trimmed_value;
+
+  while ((token = strtok_r(rest, " ", &rest))) {
+    VariableType type = parse_variable_type(token);
+    va_value_t value = string_to_va_value(token, type);
+    array_push(&var->data._array, &value);
+  }
+
+  rfree(trimmed_value);
+}
+
+void array_add_element(VariableTable* table, const char* name, const char* value) {
+  Variable* var = get_variable(table, name);
+  if (var == NULL || var->type != VAR_ARRAY) {
+    print_error("Variable is not an array");
+    return;
+  }
+
+  VariableType type = parse_variable_type(value);
+  va_value_t new_value = string_to_va_value(value, type);
+  array_push(&var->data._array, &new_value);
+}
+
+void array_set_element(VariableTable* table, const char* name, size_t index, const char* value) {
+  Variable* var = get_variable(table, name);
+  if (var == NULL || var->type != VAR_ARRAY) {
+    print_error("Variable is not an array");
+    return;
+  }
+
+  if (index >= var->data._array.size) {
+    print_error("Index out of bounds");
+    return;
+  }
+
+  VariableType type = parse_variable_type(value);
+  va_value_t new_value = string_to_va_value(value, type);
+  array_index_set(&var->data._array, index, &new_value);
+}
+
+char* array_get_element(VariableTable* table, const char* name, size_t index) {
+  Variable* var = get_variable(table, name);
+  if (var == NULL || var->type != VAR_ARRAY) {
+    print_error("Variable is not an array");
+    return NULL;
+  }
+
+  if (index >= var->data._array.size) {
+    print_error("Index out of bounds");
+    return NULL;
+  }
+
+  va_value_t* value = (va_value_t*)array_checked_get(var->data._array, index);
+  return va_value_to_string(value);
+}
+
+void array_print(VariableTable* table, const char* name) {
+  Variable* var = get_variable(table, name);
+  if (var == NULL || var->type != VAR_ARRAY) {
+    print_error("Variable is not an array");
+    return;
+  }
+
+  printf("%s=(", name);
+  for (size_t i = 0; i < var->data._array.size; i++) {
+    va_value_t* value = (va_value_t*)array_get(var->data._array, i);
+    char* str_value = va_value_to_string(value);
+    printf("%s", str_value);
+    if (i < var->data._array.size - 1)
+      printf(" ");
+    rfree(str_value);
+  }
+  printf(")\n");
+}
+
 void export_variable(VariableTable* table, const char* name) {
   Variable* var = get_variable(table, name);
   if (var) {
@@ -587,22 +677,23 @@ void set_array_variable(VariableTable* table, const char* name, char** values, i
       print_error("Cannot modify readonly variable");
       return;
     }
-    if (var->type == VAR_ARRAY || var->type == VAR_ASSOCIATIVE_ARRAY) {
-      for (int i = 0; i < var->array_size; i++) {
-        rfree(var->data._array[i]);
-      }
-      rfree(var->data._array);
+    if (var->type == VAR_ARRAY) {
+      array_free(&var->data._array);
+    } else if (var->type == VAR_ASSOCIATIVE_ARRAY) {
+      map_free(var->data._map);
     }
   } else {
     var = set_variable(table, name, "", VAR_STRING, false);
   }
 
   var->type = VAR_ARRAY;
-  var->data._array = rmalloc(size * sizeof(char*));
+  var->data._array = create_array(size);
   var->array_size = size;
 
   for (int i = 0; i < size; i++) {
-    var->data._array[i] = rstrdup(values[i]);
+    VariableType type = parse_variable_type(values[i]);
+    va_value_t value = string_to_va_value(values[i], type);
+    array_push(&var->data._array, &value);
   }
 }
 
@@ -669,6 +760,14 @@ void unset_variable_flag(va_flag_t* vf, va_flag_t flag) {
   *vf &= ~flag;
 }
 
+VariableType get_variable_type(const char* name) {
+  Variable* var = get_variable(variable_table, name);
+  if (var == NULL) {
+    return VAR_STRING;
+  }
+  return var->type;
+}
+
 void set_associative_array_variable(VariableTable* table, const char* name, const char* key, const char* value) {
   Variable* var = get_variable(table, name);
   if (var == NULL) {
@@ -732,10 +831,7 @@ void free_va_value(va_value_t* value) {
       rfree(value->_str);
       break;
     case VAR_ARRAY:
-      for (int i = 0; value->_array[i] != NULL; i++) {
-        rfree(value->_array[i]);
-      }
-      rfree(value->_array);
+      array_free(&value->_array);
       break;
     case VAR_ASSOCIATIVE_ARRAY:
       map_free(value->_map);

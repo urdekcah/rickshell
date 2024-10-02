@@ -15,6 +15,7 @@
 #include "memory.h"
 #include "error.h"
 #include "variable.h"
+#include "strconv.h"
 
 extern int yyparse(void);
 extern int yylex_destroy(void);
@@ -54,8 +55,24 @@ int execute_command(Command* cmd) {
       *open_bracket = '\0';
       *close_bracket = '\0';
       char* key = open_bracket + 1;
-
-      set_associative_array_variable(variable_table, name, key, value);
+      
+      VariableType type = get_variable_type(name);
+      if (type == VAR_ASSOCIATIVE_ARRAY) {
+        set_associative_array_variable(variable_table, name, key, value);
+      } else if (type == VAR_ARRAY) {
+        long long index;
+        StrconvResult result = ratoll(key, &index);
+        if (result.is_err) {
+          print_error("Invalid key for associative array");
+          return -1;
+        }
+        array_set_element(variable_table, name, index, value);
+      } else {
+        print_error("Invalid value for associative array");
+        return -1;
+      }
+    } else if (value[0] == '(' && value[strlen(value) - 1] == ')') {
+      parse_and_set_array(variable_table, name, value);
     } else {
       Variable* var = set_variable(variable_table, name, value, parse_variable_type(value), false);
       if (var == NULL) {

@@ -2,6 +2,7 @@
 #define __RICKSHELL_VARIABLE_H__
 #include <stdbool.h>
 #include "map.h"
+#include "array.h"
 
 typedef enum {
   VAR_STRING,
@@ -17,7 +18,7 @@ typedef struct {
     long long _number;
     double _float;
     map* _map;
-    char** _array;
+    array _array;
   };
   VariableType type;
 } va_value_t;
@@ -70,4 +71,11 @@ void set_associative_array_variable(VariableTable* table, const char* name, cons
 char* va_value_to_string(const va_value_t* value);
 va_value_t string_to_va_value(const char* str, VariableType type);
 void free_va_value(va_value_t* value);
+void array_print(VariableTable* table, const char* name);
+VariableType get_variable_type(const char* name);
+void parse_and_set_array(VariableTable* table, const char* name, const char* value);
+char* array_get_element(VariableTable* table, const char* name, size_t index);
+void array_add_element(VariableTable* table, const char* name, const char* value);
+void array_set_element(VariableTable* table, const char* name, size_t index, const char* value);
+void array_print(VariableTable* table, const char* name);
 #endif /* __RICKSHELL_VARIABLE_H__ */
