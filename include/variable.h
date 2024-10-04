@@ -33,10 +33,6 @@ typedef enum {
   VarFlag_Lowercase    = 1U << 6,
 } va_flag_t;
 
-bool is_variable_flag_set(va_flag_t* vf, va_flag_t flag);
-void set_variable_flag(va_flag_t* vf, va_flag_t flag);
-void unset_variable_flag(va_flag_t* vf, va_flag_t flag);
-
 typedef struct {
   char* name;
   char* value;
@@ -53,29 +49,27 @@ typedef struct {
   int capacity;
 } VariableTable;
 
+bool is_variable_flag_set(va_flag_t* vf, va_flag_t flag);
+void set_variable_flag(va_flag_t* vf, va_flag_t flag);
+void unset_variable_flag(va_flag_t* vf, va_flag_t flag);
+
+void init_variables();
 VariableTable* create_variable_table();
 void free_variable_table(VariableTable* table);
+Variable* create_new_variable(VariableTable* table, const char* name, VariableType type);
 Variable* set_variable(VariableTable* table, const char* name, const char* value, VariableType type, bool readonly);
 Variable* get_variable(VariableTable* table, const char* name);
 void unset_variable(VariableTable* table, const char* name);
-char* expand_variables(VariableTable* table, const char* input);
+void parse_and_set_array(VariableTable* table, const char* name, const char* value);
+void array_set_element(VariableTable* table, const char* name, size_t index, const char* value);
 bool do_not_expand_this_builtin(const char* name);
 VariableType parse_variable_type(const char* value);
 Variable* resolve_nameref(Variable* var);
-void export_variable(VariableTable* table, const char* name);
-void set_array_variable(VariableTable* table, const char* name, char** values, int size);
-void init_variables();
-void cleanup_variables();
-void free_variable(Variable* var);
 void set_associative_array_variable(VariableTable* table, const char* name, const char* key, const char* value);
 char* va_value_to_string(const va_value_t* value);
 va_value_t string_to_va_value(const char* str, VariableType type);
 void free_va_value(va_value_t* value);
-void array_print(VariableTable* table, const char* name);
-VariableType get_variable_type(const char* name);
-void parse_and_set_array(VariableTable* table, const char* name, const char* value);
-char* array_get_element(VariableTable* table, const char* name, size_t index);
-void array_add_element(VariableTable* table, const char* name, const char* value);
-void array_set_element(VariableTable* table, const char* name, size_t index, const char* value);
-void array_print(VariableTable* table, const char* name);
+void free_variable(Variable* var);
+void cleanup_variables();
+char* expand_variables(VariableTable* table, const char* input);
 #endif /* __RICKSHELL_VARIABLE_H__ */

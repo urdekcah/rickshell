@@ -112,10 +112,10 @@ void log_rotate(void) {
   fclose(log_ctx.file);
   log_ctx.file = NULL;
 
-  for (int i = log_ctx.max_backup_files - 1; i > 0; i--) {
+  for (long i = (long)log_ctx.max_backup_files - 1; i > 0; i--) {
     char old_name[256], new_name[256];
-    snprintf(old_name, sizeof(old_name), "%s.%d", log_ctx.filename, i);
-    snprintf(new_name, sizeof(new_name), "%s.%d", log_ctx.filename, i + 1);
+    snprintf(old_name, sizeof(old_name), "%s.%ld", log_ctx.filename, i);
+    snprintf(new_name, sizeof(new_name), "%s.%ld", log_ctx.filename, i + 1);
     rename(old_name, new_name);
   }
 
@@ -152,45 +152,45 @@ static void format_log_message(char* buffer, size_t buffer_size, const char* for
       fmt++;
       switch (*fmt) {
         case 'Y':
-          ptr += strftime(ptr, end - ptr, "%Y", time_info);
+          ptr += strftime(ptr, (size_t)(end - ptr), "%Y", time_info);
           break;
         case 'M':
-          ptr += strftime(ptr, end - ptr, "%m", time_info);
+          ptr += strftime(ptr, (size_t)(end - ptr), "%m", time_info);
           break;
         case 'd':
-          ptr += strftime(ptr, end - ptr, "%d", time_info);
+          ptr += strftime(ptr, (size_t)(end - ptr), "%d", time_info);
           break;
         case 'H':
-          ptr += strftime(ptr, end - ptr, "%H", time_info);
+          ptr += strftime(ptr, (size_t)(end - ptr), "%H", time_info);
           break;
         case 'I':
-          ptr += strftime(ptr, end - ptr, "%M", time_info);
+          ptr += strftime(ptr, (size_t)(end - ptr), "%M", time_info);
           break;
         case 'S':
-          ptr += strftime(ptr, end - ptr, "%S", time_info);
+          ptr += strftime(ptr, (size_t)(end - ptr), "%S", time_info);
           break;
         case 'L':
-          ptr += snprintf(ptr, end - ptr, "%s", level_str);
+          ptr += snprintf(ptr, (size_t)(end - ptr), "%s", level_str);
           break;
         case 'p':
-          ptr += snprintf(ptr, end - ptr, "%d", getpid());
+          ptr += snprintf(ptr, (size_t)(end - ptr), "%d", getpid());
           break;
         case 'f':
-          ptr += snprintf(ptr, end - ptr, "%s", file);
+          ptr += snprintf(ptr, (size_t)(end - ptr), "%s", file);
           break;
         case 'l':
-          ptr += snprintf(ptr, end - ptr, "%d", line);
+          ptr += snprintf(ptr, (size_t)(end - ptr), "%d", line);
           break;
         case 'n':
-          ptr += snprintf(ptr, end - ptr, "%s", func);
+          ptr += snprintf(ptr, (size_t)(end - ptr), "%s", func);
           break;
         case 'a':
           if (log_ctx.app_name) {
-            ptr += snprintf(ptr, end - ptr, "%s", log_ctx.app_name);
+            ptr += snprintf(ptr, (size_t)(end - ptr), "%s", log_ctx.app_name);
           }
           break;
         case 'm':
-          ptr += snprintf(ptr, end - ptr, "%s", message);
+          ptr += snprintf(ptr, (size_t)(end - ptr), "%s", message);
           break;
         default:
           *ptr++ = '%';

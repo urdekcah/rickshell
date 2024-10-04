@@ -20,7 +20,7 @@
 #define INITIAL_BUFFER_SIZE (1 * 1024)  // 1 KB initial size
 #define MAX_BUFFER_SIZE (100 * 1024 * 1024)  // 100 MB limit
 #define MAX_COMMAND_LENGTH 1000  // Maximum length for a single command
-#define BUFFER_GROWTH_FACTOR 1.5
+#define BUFFER_GROWTH_FACTOR 2
 
 extern int yylex_destroy(void);
 
@@ -40,13 +40,13 @@ static char* get_hostname(void) {
   long host_name_max = sysconf(_SC_HOST_NAME_MAX);
   if (host_name_max == -1)
     host_name_max = _POSIX_HOST_NAME_MAX;
-  hostname = rmalloc(host_name_max + 1);
+  hostname = rmalloc((size_t)host_name_max + 1);
   if (hostname == NULL) {
     perror("Error allocating memory");
     return NULL;
   }
 
-  if (gethostname(hostname, host_name_max + 1) != 0) {
+  if (gethostname(hostname, (size_t)host_name_max + 1) != 0) {
     perror("Error getting hostname");
     rfree(hostname);
     return NULL;
@@ -113,7 +113,7 @@ static char* get_input(size_t* size) {
 
   while (1) {
     size_t remaining = buffer_size - input_length;
-    if (!fgets(buffer + input_length, remaining, stdin)) {
+    if (!fgets(buffer + input_length, (int)remaining, stdin)) {
       if (feof(stdin)) {
         if (input_length == 0) {
           rfree(buffer);
@@ -177,7 +177,7 @@ static int process_command(const char* input) {
   }
 
   if (strcmp(input, "exit") == 0) return 1;
-  parse_and_execute((char*)input);
+  parse_and_execute(input);
   return 0;
 }
 

@@ -56,17 +56,17 @@ int execute_command(Command* cmd) {
       *close_bracket = '\0';
       char* key = open_bracket + 1;
       
-      VariableType type = get_variable_type(name);
-      if (type == VAR_ASSOCIATIVE_ARRAY) {
+      Variable* var = get_variable(variable_table, name);
+      if (var != NULL && var->type == VAR_ASSOCIATIVE_ARRAY) {
         set_associative_array_variable(variable_table, name, key, value);
-      } else if (type == VAR_ARRAY) {
+      } else if (var != NULL && var->type == VAR_ARRAY) {
         long long index;
         StrconvResult result = ratoll(key, &index);
         if (result.is_err) {
           print_error("Invalid key for associative array");
           return -1;
         }
-        array_set_element(variable_table, name, index, value);
+        array_set_element(variable_table, name, (size_t)index, value);
       } else {
         print_error("Invalid value for associative array");
         return -1;
@@ -86,10 +86,10 @@ int execute_command(Command* cmd) {
     char** new_data = rcalloc(cmd->argv.capacity, sizeof(char*));
     size_t new_size = 0;
     for (int i = 0; cmd->argv.data[i] != NULL; i++) {
-      int len = strlen(cmd->argv.data[i]);
+      size_t len = strlen(cmd->argv.data[i]);
       if (len > 0 && cmd->argv.data[i][len - 1] == '=') {
         if (cmd->argv.data[i + 1] != NULL) {
-          int new_len = len + strlen(cmd->argv.data[i + 1]) + 1;
+          size_t new_len = len + strlen(cmd->argv.data[i + 1]) + 1;
           new_data[new_size] = rcalloc(new_len, sizeof(char));
           snprintf(new_data[new_size], new_len, "%s%s", cmd->argv.data[i], cmd->argv.data[i + 1]);
           i++;
@@ -325,7 +325,7 @@ int execute_command_list(CommandList* list) {
       if (status == 0 && cmd->or_next)
         break;
     }
-    cmd = cmd->next;
+    if (cmd != NULL) cmd = cmd->next;
   }
   
   return status;

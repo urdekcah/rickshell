@@ -151,12 +151,12 @@ void rfree(void* ptr) {
 
 char *rstrdup(const char *src) {
   size_t len = strlen(src) + 1;
-  char *dst = rmalloc(len);
-  if (dst == NULL) {
+  char* dest = rmalloc(len);
+  if (dest == NULL) {
+    print_error("Memory allocation failed");
     return NULL;
   }
-  memcpy(dst, src, len);
-  return dst;
+  return memcpy(dest, src, len);
 }
 
 char* rstrcat(char* dest, const char* src, size_t dest_size) {

@@ -134,8 +134,8 @@ bool map_remove(map* m, const char* key) {
 
       size_t next = (index + 1) % m->capacity;
       while (m->buckets[next].is_occupied) {
-        uint64_t hash = wyhash(m->buckets[next].key, strlen(m->buckets[next].key), 0, _wyp);
-        size_t ideal_pos = hash % m->capacity;
+        uint64_t _hash = wyhash(m->buckets[next].key, strlen(m->buckets[next].key), 0, _wyp);
+        size_t ideal_pos = _hash % m->capacity;
         if ((index < next && (ideal_pos <= index || ideal_pos > next)) || (index > next && (ideal_pos <= index && ideal_pos > next))) {
           m->buckets[index] = m->buckets[next];
           index = next;

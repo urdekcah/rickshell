@@ -36,78 +36,83 @@ void free_variable_table(VariableTable* table) {
   rfree(table);
 }
 
-static void expand_table(VariableTable* table) {
-  table->capacity *= 2;
-  table->variables = rrealloc(table->variables, table->capacity * sizeof(Variable));
-}
-
-Variable* set_variable(VariableTable* table, const char* name, const char* value, VariableType type, bool readonly) {
-  for (int i = 0; i < table->size; i++) {
-    if (strcmp(table->variables[i].name, name) == 0) {
-      Variable* var = resolve_nameref(&table->variables[i]);
-      if (var == NULL) {
-        print_error("Failed to resolve nameref");
-        return NULL;
-      }
-
-      if (is_variable_flag_set(&var->flags, VarFlag_ReadOnly)) {
-        print_error("Cannot modify readonly variable");
-        return NULL;
-      }
-      rfree(var->value);
-      var->value = rstrdup(value);
-      var->type = type;
-      if (readonly) set_variable_flag(&var->flags, VarFlag_ReadOnly);
-
-      switch (type) {
-      case VAR_STRING:
-        var->data._str = remove_quotes(value);
-        break;
-      case VAR_INTEGER:
-        StrconvResult result = ratoll(value, &var->data._number);
-        if (result.is_err) {
-          print_error("Failed to convert string to integer");
-          return NULL;
-        }
-        break;
-      case VAR_ARRAY:
-        if (var->data._array.data) array_free(&var->data._array);
-        parse_and_set_array(variable_table, name, value);
-        break;
-      case VAR_ASSOCIATIVE_ARRAY:
-        if (var->data._map == NULL) {
-          var->data._map = create_map();
-        }
-        break;
-      default:
-        break;
-      }
-      
-      return var;
-    }
-  }
-
+Variable* create_new_variable(VariableTable* table, const char* name, VariableType type) {
   if (table->size == table->capacity) {
-    expand_table(table);
+    table->capacity *= 2;
+    table->variables = rrealloc(table->variables, (size_t)(table->capacity * (int)sizeof(Variable)));
   }
 
   Variable* var = &table->variables[table->size++];
   var->name = rstrdup(name);
-  var->value = rstrdup(value);
+  var->value = NULL;
   var->type = type;
   var->flags = 0;
   var->array_size = 0;
+
+  memset(&var->data, 0, sizeof(va_value_t));
+  var->data.type = type;
   
-  if (type == VAR_INTEGER) {
-    var->data._number = atoi(value);
-  } else if (type == VAR_ASSOCIATIVE_ARRAY) {
-    var->data._map = create_map();
-  } else if (type == VAR_ARRAY) {
-    var->data._array = create_array(sizeof(va_value_t));
+  switch (type) {
+    case VAR_STRING:
+      var->data._str = NULL;
+      break;
+    case VAR_INTEGER:
+      var->data._number = 0;
+      break;
+    case VAR_ASSOCIATIVE_ARRAY:
+      var->data._map = create_map();
+      break;
+    case VAR_ARRAY:
+      var->data._array = create_array(sizeof(va_value_t));
+      break;
+    default:
+      break;
   }
 
-  if (readonly) set_variable_flag(&var->flags, VarFlag_ReadOnly);
+  return var;
+}
 
+Variable* set_variable(VariableTable* table, const char* name, const char* value, VariableType type, bool readonly) {
+  Variable* var = get_variable(table, name);
+  if (var == NULL) {
+    var = create_new_variable(table, name, type);
+  } else {
+    rfree(var->value);
+    free_va_value(&var->data);
+  }
+  if (is_variable_flag_set(&var->flags, VarFlag_ReadOnly)) {
+    print_error("Cannot modify readonly variable");
+    return NULL;
+  }
+
+  var->value = rstrdup(value);
+  var->type = type;
+  var->data.type = type;
+
+  switch (type) {
+    case VAR_STRING:
+      var->data._str = rstrdup(value);
+      break;
+    case VAR_INTEGER:
+      StrconvResult result = ratoll(value, &var->data._number);
+      if (result.is_err) {
+        print_error("Failed to convert string to integer");
+        return NULL;
+      }
+      break;
+    case VAR_ARRAY:
+      if (var->data._array.data) array_free(&var->data._array);
+      parse_and_set_array(variable_table, name, value);
+      break;
+    case VAR_ASSOCIATIVE_ARRAY:
+      if (var->data._map == NULL) {
+        var->data._map = create_map();
+      }
+      break;
+    default:
+      break;
+  }
+  if (readonly) set_variable_flag(&var->flags, VarFlag_ReadOnly);
   return var;
 }
 
@@ -115,8 +120,14 @@ Variable* get_variable(VariableTable* table, const char* name) {
   for (int i = 0; i < table->size; i++) {
     if (strcmp(table->variables[i].name, name) == 0) {
       Variable* var = &table->variables[i];
-      if (var->type == VAR_NAMEREF) 
-        return resolve_nameref(var);
+      if (var->type == VAR_NAMEREF) {
+        Variable* resolved = resolve_nameref(var);
+        if (resolved == NULL) {
+          print_error("Failed to resolve nameref");
+          return NULL;
+        }
+        return resolved;
+      }
       return var;
     }
   }
@@ -133,131 +144,208 @@ void unset_variable(VariableTable* table, const char* name) {
       rfree(table->variables[i].name);
       rfree(table->variables[i].value);
       free_va_value(&table->variables[i].data);
-      memmove(&table->variables[i], &table->variables[i + 1], (table->size - i - 1) * sizeof(Variable));
+      memmove(&table->variables[i], &table->variables[i + 1], (size_t)((table->size - i - 1) * (int)sizeof(Variable)));
       table->size--;
       return;
     }
   }
 }
 
-static char* str_replace(const char* src, const char* old, const char* new, bool replace_all) {
-  char* result;
-  int i, cnt = 0;
-  int newlen = strlen(new);
-  int oldlen = strlen(old);
+void parse_and_set_array(VariableTable* table, const char* name, const char* value) {
+  char* trimmed_value = rstrdup(value + 1);
+  trimmed_value[strlen(trimmed_value) - 1] = '\0';
+  Variable* var = create_new_variable(table, name, VAR_ARRAY);
 
-  for (i = 0; src[i] != '\0'; i++) {
-    if (strstr(&src[i], old) == &src[i]) {
-      cnt++;
-      i += oldlen - 1;
-      if (!replace_all) break;
-    }
+  char* token;
+  char* rest = trimmed_value;
+
+  while ((token = strtok_r(rest, " ", &rest)) != NULL) {
+    VariableType type = parse_variable_type(token);
+    va_value_t _value = string_to_va_value(token, type);
+    array_push(&var->data._array, &_value);
   }
 
-  result = rmalloc(i + cnt * (newlen - oldlen) + 1);
+  rfree(trimmed_value);
+}
 
-  i = 0;
-  while (*src) {
-    if (strstr(src, old) == src) {
-      strcpy(&result[i], new);
-      i += newlen;
-      src += oldlen;
-      if (!replace_all) {
-        strcat(result, src);
-        return result;
+void array_set_element(VariableTable* table, const char* name, size_t index, const char* value) {
+  Variable* var = get_variable(table, name);
+  if (var == NULL || var->type != VAR_ARRAY) {
+    print_error("Variable is not an array");
+    return;
+  }
+
+  if (index >= var->data._array.size) {
+    print_error("Index out of bounds");
+    return;
+  }
+
+  VariableType type = parse_variable_type(value);
+  va_value_t new_value = string_to_va_value(value, type);
+  array_index_set(&var->data._array, index, &new_value);
+}
+
+bool do_not_expand_this_builtin(const char* name) {
+  char* do_not_expand[] = {"readonly", "set"};
+  for (int i = 0; (unsigned long)i < sizeof(do_not_expand) / sizeof(char*); i++) {
+    if (strcmp(name, do_not_expand[i]) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+VariableType parse_variable_type(const char* value) {
+  if (value == NULL || *value == '\0')
+    return VAR_STRING;
+  while (isspace(*value)) value++;
+  const char* end = value + strlen(value) - 1;
+  while (end > value && isspace(*end)) end--;
+  end++;
+  if ((value[0] == '"' && end[-1] == '"') || (value[0] == '\'' && end[-1] == '\''))
+    return VAR_STRING;
+  char* endptr;
+  strtol(value, &endptr, 10);
+  if (*endptr == '\0')
+    return VAR_INTEGER;
+  if (value[0] == '(' && end[-1] == ')')
+    return VAR_ARRAY;
+  if (value[0] == '{' && end[-1] == '}')
+    return VAR_ASSOCIATIVE_ARRAY;
+  return VAR_STRING;
+}
+
+Variable* resolve_nameref(Variable* var) {
+  if (var == NULL || var->type != VAR_NAMEREF) {
+    return var;
+  }
+  
+  Variable* resolved = NULL;
+  int depth = 0;
+  while (resolved != NULL && resolved->type == VAR_NAMEREF) {
+    if (depth++ > 100) {
+      print_error("Too many levels of indirection");
+      return NULL;
+    }
+    resolved = get_variable(variable_table, resolved->data._str);
+    if (resolved == NULL) {
+      print_error("Variable not found");
+      return NULL;
+    }
+  }
+  return resolved;
+}
+
+void set_associative_array_variable(VariableTable* table, const char* name, const char* key, const char* value) {
+  Variable* var = get_variable(table, name);
+  if (var == NULL) var = create_new_variable(table, name, VAR_ASSOCIATIVE_ARRAY);
+
+  if (var->type != VAR_ASSOCIATIVE_ARRAY) {
+    print_error("Variable is not an associative array");
+    return;
+  }
+
+  va_value_t new_value = string_to_va_value(value, VAR_STRING);
+  map_insert(var->data._map, key, &new_value, sizeof(va_value_t));
+}
+
+char* va_value_to_string(const va_value_t* value) {
+  char* result = NULL;
+  switch (value->type) {
+    case VAR_STRING:
+      result = rstrdup(value->_str);
+      break;
+    case VAR_INTEGER:
+      result = rmalloc(32);
+      snprintf(result, 32, "%lld", value->_number);
+      break;
+    case VAR_ARRAY:
+      size_t total_length = 2;
+      for (size_t i = 0; i < value->_array.size; ++i) {
+        va_value_t element = *(va_value_t*)array_checked_get(value->_array, i);
+        char* element_str = va_value_to_string(&element);
+        total_length += strlen(element_str) + 1;
+        free(element_str);
       }
-    } else {
-      result[i++] = *src++;
-    }
+      result = rmalloc(total_length);
+      strcpy(result, "(");
+      for (size_t i = 0; i < value->_array.size; ++i) {
+        va_value_t element = *(va_value_t*)array_checked_get(value->_array, i);
+        char* element_str = va_value_to_string(&element);
+        strcat(result, element_str);
+        if (i < value->_array.size - 1)
+          strcat(result, " ");
+        free(element_str);
+      }
+      strcat(result, ")");
+      break;
+    case VAR_ASSOCIATIVE_ARRAY:
+      break;
+    default:
+      result = rstrdup("");
+      break;
   }
-  result[i] = '\0';
   return result;
 }
 
-bool match_pattern(const char* str, const char* pattern) {
-  const char* s = str;
-  const char* p = pattern;
-  
-  while (*s && *p) {
-    if (*p == '*') {
-      p++;
-      if (*p == '\0') return true;
-      while (*s) {
-        if (match_pattern(s, p)) return true;
-        s++;
+va_value_t string_to_va_value(const char* str, VariableType type) {
+  va_value_t result;
+  result.type = type;
+  switch (type) {
+    case VAR_STRING:
+      result._str = remove_quotes(str);
+      break;
+    case VAR_INTEGER:
+      result._number = atoll(str);
+      break;
+    case VAR_ARRAY:
+      result._array = create_array(sizeof(va_value_t));
+      char* token;
+      char* rest = rstrdup(str + 1);
+      rest[strlen(rest) - 1] = '\0';
+      while ((token = strtok_r(rest, " ", &rest))) {
+        VariableType _type = parse_variable_type(token);
+        va_value_t value = string_to_va_value(token, _type);
+        array_push(&result._array, &value);
       }
-      return false;
-    } else if (*p == '?' || *p == *s) {
-      s++;
-      p++;
-    } else {
-      return false;
-    }
+      rfree(rest);
+      break;
+    case VAR_ASSOCIATIVE_ARRAY:
+      result._map = create_map();
+      break;
+    default:
+      result.type = VAR_STRING;
+      result._str = rstrdup("");
+      break;
   }
-  
-  while (*p == '*') p++;
-  return *p == '\0';
-}
-
-char* remove_prefix(const char* value, const char* pattern, bool is_longest_match) {
-  int value_len = strlen(value);
-  const char* best_match = NULL;
-
-  if (is_longest_match) {
-    for (int i = 0; i < value_len; i++) {
-      if (match_pattern(value + i, pattern))
-        best_match = strchr(value + i, '.');
-    }
-  } else {
-    for (int i = 0; i < value_len; i++) {
-      if (match_pattern(value + i, pattern)) {
-        best_match = strchr(value + i, '.');
-        break;
-      }
-    }
-  }
-
-  if (best_match != NULL) {
-    return strdup(best_match);
-  }
-
-  return strdup(value);
-}
-
-static char* remove_suffix(const char* str, const char* suffix, bool greedy) {
-  int suffix_len = strlen(suffix);
-  int str_len = strlen(str);
-  char* result = rstrdup(str);
-
-  if (greedy) {
-    while (str_len >= suffix_len && strcmp(result + str_len - suffix_len, suffix) == 0) {
-      result[str_len - suffix_len] = '\0';
-      str_len -= suffix_len;
-    }
-  } else if (str_len >= suffix_len && strcmp(result + str_len - suffix_len, suffix) == 0) {
-    result[str_len - suffix_len] = '\0';
-  }
-
   return result;
 }
 
-char* dynstrcpy(char** dest, size_t* dest_size, size_t* dest_len, const char* src) {
-  size_t src_len = strlen(src);
-  size_t new_len = *dest_len + src_len;
-
-  if (new_len >= *dest_size) {
-    size_t new_size = *dest_size;
-    while (new_size <= new_len) {
-      new_size *= 2;
-    }
-    *dest = rrealloc(*dest, new_size);
-    *dest_size = new_size;
+void free_va_value(va_value_t* value) {
+  switch (value->type) {
+    case VAR_STRING:
+      rfree(value->_str);
+      break;
+    case VAR_ARRAY:
+      array_free(&value->_array);
+      break;
+    case VAR_ASSOCIATIVE_ARRAY:
+      map_free(value->_map);
+      break;
+    default:
+      break;
   }
+}
 
-  strcpy(*dest + *dest_len, src);
-  *dest_len = new_len;
+void free_variable(Variable* var) {
+  if (var == NULL) return;
+  rfree(var->name);
+  rfree(var->value);
+  free_va_value(&var->data);
+}
 
-  return *dest;
+void cleanup_variables() {
+  free_variable_table(variable_table);
 }
 
 char* expand_variables(VariableTable* table, const char* input) {
@@ -271,7 +359,7 @@ char* expand_variables(VariableTable* table, const char* input) {
       if (*(p + 1) == '{') {
         const char* end = strchr(p + 2, '}');
         if (end) {
-          size_t var_name_len = end - (p + 2);
+          size_t var_name_len = (size_t)(end - (p + 2));
           char* var_name = rmalloc(var_name_len + 1);
           strncpy(var_name, p + 2, var_name_len);
           var_name[var_name_len] = '\0';
@@ -311,7 +399,7 @@ char* expand_variables(VariableTable* table, const char* input) {
                 return NULL;
               }
               if (index >= 0 && index < (long long)var->data._array.size) {
-                va_value_t* value = array_checked_get(var->data._array, index);
+                va_value_t* value = array_checked_get(var->data._array, (size_t)index);
                 char* str_value = va_value_to_string(value);
                 dynstrcpy(&result, &result_size, &result_len, str_value);
                 rfree(str_value);
@@ -319,12 +407,12 @@ char* expand_variables(VariableTable* table, const char* input) {
             }
           } else if (hash) {
             if (*var_name == '#') {
-              const char* var_name = hash + 1;
-              Variable* var = get_variable(table, var_name);
+              const char* vname = hash + 1;
+              Variable* var = get_variable(table, vname);
               if (var) {
-                int length = strlen(var->value);
+                size_t length = strlen(var->value);
                 char length_str[20];
-                snprintf(length_str, sizeof(length_str), "%d", length);
+                snprintf(length_str, sizeof(length_str), "%ld", length);
                 dynstrcpy(&result, &result_size, &result_len, length_str);
               }
             } else {
@@ -350,7 +438,7 @@ char* expand_variables(VariableTable* table, const char* input) {
             }
           } else if (exclamation) {
             char* indirect_var_name = var_name + 1;
-            int indirect_var_name_len = strlen(indirect_var_name);
+            size_t indirect_var_name_len = strlen(indirect_var_name);
             if (indirect_var_name[indirect_var_name_len - 1] == '*' || indirect_var_name[indirect_var_name_len - 1] == '@') {
               indirect_var_name[indirect_var_name_len - 1] = '\0';
               for (int i = 0; i < table->size; i++) {
@@ -381,14 +469,14 @@ char* expand_variables(VariableTable* table, const char* input) {
               if (*pattern == '\0') {
                 for (char* c = value; *c; c++) {
                   if (convert_all || c == value) {
-                    *c = toupper(*c);
+                    *c = (char)toupper(*c);
                   }
                 }
               } else {
                 for (char* c = value; *c; c++) {
                   if (strchr(pattern, *c) != NULL) {
                     if (convert_all || c == value) {
-                      *c = toupper(*c);
+                      *c = (char)toupper(*c);
                     }
                   }
                 }
@@ -403,10 +491,10 @@ char* expand_variables(VariableTable* table, const char* input) {
               char* value = rstrdup(var->value);
               if (*(comma + 1) == ',') {
                 for (char* c = value; *c; c++) {
-                  *c = tolower(*c);
+                  *c = (char)tolower(*c);
                 }
               } else {
-                *value = tolower(*value);
+                *value = (char)tolower(*value);
               }
               dynstrcpy(&result, &result_size, &result_len, value);
               rfree(value);
@@ -419,17 +507,17 @@ char* expand_variables(VariableTable* table, const char* input) {
               long offset = strtol(colon + 1, &endptr, 10);
               char* length_str = (*endptr == ':') ? endptr + 1 : NULL;
 
-              int var_len = strlen(var->value);
+              size_t var_len = strlen(var->value);
               
               if (offset < 0) {
-                offset = var_len + offset;
+                offset = (long)var_len + offset;
               }
 
               if (length_str) {
                 long length = strtol(length_str, NULL, 10);
                 if (offset >= 0 && length > 0 && offset + length <= (long)var_len) {
-                  char* temp = rmalloc(length + 1);
-                  strncpy(temp, var->value + offset, length);
+                  char* temp = rmalloc((size_t)length + 1);
+                  strncpy(temp, var->value + offset, (size_t)length);
                   temp[length] = '\0';
                   dynstrcpy(&result, &result_size, &result_len, temp);
                   rfree(temp);
@@ -558,7 +646,7 @@ char* expand_variables(VariableTable* table, const char* input) {
         const char* var_end = var_start;
         while (isalnum(*var_end) || *var_end == '_') var_end++;
         
-        size_t var_name_len = var_end - var_start;
+        size_t var_name_len = (size_t)(var_end - var_start);
         char* var_name = rmalloc(var_name_len + 1);
         strncpy(var_name, var_start, var_name_len);
         var_name[var_name_len] = '\0';
@@ -580,273 +668,6 @@ char* expand_variables(VariableTable* table, const char* input) {
   return result;
 }
 
-void parse_and_set_array(VariableTable* table, const char* name, const char* value) {
-  char* trimmed_value = rstrdup(value + 1);
-  trimmed_value[strlen(trimmed_value) - 1] = '\0';
-  Variable* var = set_variable(table, name, "", VAR_ARRAY, false);
-
-  char* token;
-  char* rest = trimmed_value;
-
-  while ((token = strtok_r(rest, " ", &rest))) {
-    VariableType type = parse_variable_type(token);
-    va_value_t value = string_to_va_value(token, type);
-    array_push(&var->data._array, &value);
-  }
-
-  rfree(trimmed_value);
-}
-
-void array_add_element(VariableTable* table, const char* name, const char* value) {
-  Variable* var = get_variable(table, name);
-  if (var == NULL || var->type != VAR_ARRAY) {
-    print_error("Variable is not an array");
-    return;
-  }
-
-  VariableType type = parse_variable_type(value);
-  va_value_t new_value = string_to_va_value(value, type);
-  array_push(&var->data._array, &new_value);
-}
-
-void array_set_element(VariableTable* table, const char* name, size_t index, const char* value) {
-  Variable* var = get_variable(table, name);
-  if (var == NULL || var->type != VAR_ARRAY) {
-    print_error("Variable is not an array");
-    return;
-  }
-
-  if (index >= var->data._array.size) {
-    print_error("Index out of bounds");
-    return;
-  }
-
-  VariableType type = parse_variable_type(value);
-  va_value_t new_value = string_to_va_value(value, type);
-  array_index_set(&var->data._array, index, &new_value);
-}
-
-char* array_get_element(VariableTable* table, const char* name, size_t index) {
-  Variable* var = get_variable(table, name);
-  if (var == NULL || var->type != VAR_ARRAY) {
-    print_error("Variable is not an array");
-    return NULL;
-  }
-
-  if (index >= var->data._array.size) {
-    print_error("Index out of bounds");
-    return NULL;
-  }
-
-  va_value_t* value = (va_value_t*)array_checked_get(var->data._array, index);
-  return va_value_to_string(value);
-}
-
-void array_print(VariableTable* table, const char* name) {
-  Variable* var = get_variable(table, name);
-  if (var == NULL || var->type != VAR_ARRAY) {
-    print_error("Variable is not an array");
-    return;
-  }
-
-  printf("%s=(", name);
-  for (size_t i = 0; i < var->data._array.size; i++) {
-    va_value_t* value = (va_value_t*)array_get(var->data._array, i);
-    char* str_value = va_value_to_string(value);
-    printf("%s", str_value);
-    if (i < var->data._array.size - 1)
-      printf(" ");
-    rfree(str_value);
-  }
-  printf(")\n");
-}
-
-void export_variable(VariableTable* table, const char* name) {
-  Variable* var = get_variable(table, name);
-  if (var) {
-    setenv(name, var->value, 1);
-  } else {
-    print_error("Variable not found");
-  }
-}
-
-void set_array_variable(VariableTable* table, const char* name, char** values, int size) {
-  Variable* var = get_variable(table, name);
-  if (var) {
-    if (is_variable_flag_set(&var->flags, VarFlag_ReadOnly)) {
-      print_error("Cannot modify readonly variable");
-      return;
-    }
-    if (var->type == VAR_ARRAY) {
-      array_free(&var->data._array);
-    } else if (var->type == VAR_ASSOCIATIVE_ARRAY) {
-      map_free(var->data._map);
-    }
-  } else {
-    var = set_variable(table, name, "", VAR_STRING, false);
-  }
-
-  var->type = VAR_ARRAY;
-  var->data._array = create_array(size);
-  var->array_size = size;
-
-  for (int i = 0; i < size; i++) {
-    VariableType type = parse_variable_type(values[i]);
-    va_value_t value = string_to_va_value(values[i], type);
-    array_push(&var->data._array, &value);
-  }
-}
-
-bool do_not_expand_this_builtin(const char* name) {
-  char* do_not_expand[] = {"readonly", "set"};
-  for (int i = 0; (unsigned long)i < sizeof(do_not_expand) / sizeof(char*); i++) {
-    if (strcmp(name, do_not_expand[i]) == 0) {
-      return true;
-    }
-  }
-  return false;
-}
-
-VariableType parse_variable_type(const char* value) {
-  if (value == NULL || *value == '\0')
-    return VAR_STRING;
-  while (isspace(*value)) value++;
-  const char* end = value + strlen(value) - 1;
-  while (end > value && isspace(*end)) end--;
-  end++;
-  if ((value[0] == '"' && end[-1] == '"') || (value[0] == '\'' && end[-1] == '\''))
-    return VAR_STRING;
-  char* endptr;
-  strtol(value, &endptr, 10);
-  if (*endptr == '\0')
-    return VAR_INTEGER;
-  if (value[0] == '(' && end[-1] == ')')
-    return VAR_ARRAY;
-  if (value[0] == '{' && end[-1] == '}')
-    return VAR_ASSOCIATIVE_ARRAY;
-  return VAR_STRING;
-}
-
-Variable* resolve_nameref(Variable* var) {
-  if (var == NULL || var->type != VAR_NAMEREF) {
-    return var;
-  }
-  
-  Variable* resolved = NULL;
-  int depth = 0;
-  while (resolved != NULL && resolved->type == VAR_NAMEREF) {
-    if (depth++ > 100) {
-      print_error("Too many levels of indirection");
-      return NULL;
-    }
-    resolved = get_variable(variable_table, resolved->data._str);
-    if (resolved == NULL) {
-      print_error("Variable not found");
-      return NULL;
-    }
-  }
-  return resolved;
-}
-
-bool is_variable_flag_set(va_flag_t* vf, va_flag_t flag) {
-  return (*vf & flag) != 0;
-}
-
-void set_variable_flag(va_flag_t* vf, va_flag_t flag) {
-  *vf |= flag;
-}
-
-void unset_variable_flag(va_flag_t* vf, va_flag_t flag) {
-  *vf &= ~flag;
-}
-
-VariableType get_variable_type(const char* name) {
-  Variable* var = get_variable(variable_table, name);
-  if (var == NULL) {
-    return VAR_STRING;
-  }
-  return var->type;
-}
-
-void set_associative_array_variable(VariableTable* table, const char* name, const char* key, const char* value) {
-  Variable* var = get_variable(table, name);
-  if (var == NULL) {
-    var = set_variable(table, name, "", VAR_ASSOCIATIVE_ARRAY, false);
-  }
-
-  if (var->type != VAR_ASSOCIATIVE_ARRAY) {
-    print_error("Variable is not an associative array");
-    return;
-  }
-
-  va_value_t new_value = string_to_va_value(value, VAR_STRING);
-  map_insert(var->data._map, key, &new_value, sizeof(va_value_t));
-}
-
-char* va_value_to_string(const va_value_t* value) {
-  char* result = NULL;
-  switch (value->type) {
-    case VAR_STRING:
-      result = rstrdup(value->_str);
-      break;
-    case VAR_INTEGER:
-      result = rmalloc(32);
-      snprintf(result, 32, "%lld", value->_number);
-      break;
-    case VAR_ARRAY:
-    case VAR_ASSOCIATIVE_ARRAY:
-      result = rstrdup("(array)");
-      break;
-    default:
-      result = rstrdup("");
-      break;
-  }
-  return result;
-}
-
-va_value_t string_to_va_value(const char* str, VariableType type) {
-  va_value_t result;
-  result.type = type;
-  switch (type) {
-    case VAR_STRING:
-      result._str = rstrdup(str);
-      break;
-    case VAR_INTEGER:
-      result._number = atoll(str);
-      break;
-    case VAR_ARRAY:
-    case VAR_ASSOCIATIVE_ARRAY:
-      result._map = create_map();
-      break;
-    default:
-      result._str = rstrdup("");
-      break;
-  }
-  return result;
-}
-
-void free_va_value(va_value_t* value) {
-  switch (value->type) {
-    case VAR_STRING:
-      rfree(value->_str);
-      break;
-    case VAR_ARRAY:
-      array_free(&value->_array);
-      break;
-    case VAR_ASSOCIATIVE_ARRAY:
-      map_free(value->_map);
-      break;
-    default:
-      break;
-  }
-}
-
-void free_variable(Variable* var) {
-  rfree(var->name);
-  rfree(var->value);
-  free_va_value(&var->data);
-}
-
-void cleanup_variables() {
-  free_variable_table(variable_table);
-}
+bool is_variable_flag_set(va_flag_t* vf, va_flag_t flag) { return (*vf & flag) != 0; }
+void set_variable_flag(va_flag_t* vf, va_flag_t flag) { *vf |= flag; }
+void unset_variable_flag(va_flag_t* vf, va_flag_t flag) { *vf &= ~flag; }

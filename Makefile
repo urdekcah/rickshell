@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS=-Wall -Wextra -Iinclude
+CFLAGS=-O3 -Wall -Wextra -Wconversion -Wnull-dereference -Wshadow -Wlogical-op -Wuninitialized -fstrict-aliasing -Werror -Iinclude
 LDFLAGS=-static -Wl,--warn-common
 AR=ar
 ARFLAGS=rcs
@@ -24,6 +24,9 @@ $(TARGET): $(OBJS) $(BUILTIN_LIB)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
+
+lex.yy.o: lex.yy.c
+	$(CC) $(CFLAGS) -Wno-null-dereference -Wno-error=null-dereference -c $< -o $@
 
 clean:
 	rm -f $(OBJS) $(BUILTIN_OBJS) $(TARGET) $(BUILTIN_LIB)

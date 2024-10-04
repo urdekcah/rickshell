@@ -80,12 +80,14 @@ static char *find_cd_path(const char *dir) {
   
   path = strtok_r(cdpath_copy, ":", &saveptr);
   while (path != NULL) {
-    snprintf(full_path, sizeof(full_path), "%s/%s", path, dir);
-    if (access(full_path, F_OK) == 0) {
-      free(cdpath_copy);
-      return full_path;
+    if (strlen(path) + strlen(dir) + 1 < sizeof(full_path)) {
+      snprintf(full_path, sizeof(full_path), "%s/%s", path, dir);
+      if (access(full_path, F_OK) == 0) {
+        free(cdpath_copy);
+        return full_path;
+      }
+      path = strtok_r(NULL, ":", &saveptr);
     }
-    path = strtok_r(NULL, ":", &saveptr);
   }
   
   free(cdpath_copy);
@@ -127,6 +129,7 @@ int builtin_cd(Command *cmd) {
       return 1;
     }
   }
+  (void)physical;
 
   if (dir == NULL) {
     dir = getenv("HOME");

@@ -7,8 +7,7 @@
 static void array_grow(array* a) {
   if (array_has_flag(a, ArrayFlag_Fixed)) return;
   size_t new_capacity = a->capacity == 0 ? 1 : a->capacity * 2;
-  void* new_data = rrealloc(a->data, new_capacity * a->element_size);
-  a->data = new_data;
+  a->data = rrealloc(a->data, new_capacity * a->element_size);
   a->capacity = new_capacity;
 }
 
