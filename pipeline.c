@@ -13,7 +13,10 @@ int execute_pipeline(Command* first_cmd) {
   int prev_fd = -1;
 
   while (cmd != NULL && cmd->pipline_next) {
-    pipe(pipefd);
+    if (pipe(pipefd) == -1) {
+      perror("pipe failed");
+      return -1;
+    }
     pid = fork();
 
     if (pid == 0) {

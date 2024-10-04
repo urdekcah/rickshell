@@ -9,7 +9,7 @@
 #include "result.h"
 #include "wyhash.h"
 
-map* create_map() {
+map* create_map_with_func(MapFreeFn value_free) {
   map* m = (map*)rmalloc(sizeof(map));
   if (!m) {
     return NULL;
@@ -27,8 +27,12 @@ map* create_map() {
     rfree(m);
     return NULL;
   }
-  m->value_free = rfree;
+  m->value_free = value_free;
   return m;
+}
+
+map* create_map() {
+  return create_map_with_func(rfree);
 }
 
 MapResult resize_map(map* m, size_t new_capacity) {
@@ -134,8 +138,8 @@ bool map_remove(map* m, const char* key) {
 
       size_t next = (index + 1) % m->capacity;
       while (m->buckets[next].is_occupied) {
-        uint64_t hash = wyhash(m->buckets[next].key, strlen(m->buckets[next].key), 0, _wyp);
-        size_t ideal_pos = hash % m->capacity;
+        uint64_t _hash = wyhash(m->buckets[next].key, strlen(m->buckets[next].key), 0, _wyp);
+        size_t ideal_pos = _hash % m->capacity;
         if ((index < next && (ideal_pos <= index || ideal_pos > next)) || (index > next && (ideal_pos <= index && ideal_pos > next))) {
           m->buckets[index] = m->buckets[next];
           index = next;

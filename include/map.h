@@ -12,8 +12,9 @@ typedef struct {
   void* value;
   size_t value_size;
   bool is_occupied;
-  bool is_deleted;
 } map_kv;
+
+typedef void (*MapFreeFn)(void*);
 
 typedef struct {
   map_kv* buckets;
@@ -21,7 +22,7 @@ typedef struct {
   size_t size;
   size_t num_deleted;
   pthread_mutex_t lock;
-  void (*value_free)(void*);
+  MapFreeFn value_free;
 } map;
 
 typedef enum {
@@ -32,10 +33,11 @@ typedef enum {
   MAP_ERROR_INVALID_ARGUMENT
 } MapErrCode;
 
+map* create_map_with_func(MapFreeFn value_free);
 map* create_map();
 MapResult resize_map(map* m, size_t new_capacity);
 MapResult map_insert(map* m, const char* key, void* value, size_t value_size);
 MapResult map_get(const map* m, const char* key, void* out_value, size_t* out_value_size);
 bool map_remove(map* m, const char* key);
-void free_map(map* m);
+void map_free(map* m);
 #endif /* __RICKSHELL_MAP_H__ */

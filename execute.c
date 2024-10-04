@@ -15,6 +15,7 @@
 #include "memory.h"
 #include "error.h"
 #include "variable.h"
+#include "strconv.h"
 
 extern int yyparse(void);
 extern int yylex_destroy(void);
@@ -40,6 +41,8 @@ int execute_command(Command* cmd) {
 
   bool should_not_expand = do_not_expand_this_builtin(cmd->argv.data[0]);
   char* equals_sign = strchr(cmd->argv.data[0], '=');
+  char* open_bracket = strchr(cmd->argv.data[0], '[');
+  char* close_bracket = strrchr(cmd->argv.data[0], ']');
   if (equals_sign != NULL && !should_not_expand) {
     *equals_sign = '\0';
     const char* name = cmd->argv.data[0];
@@ -48,22 +51,47 @@ int execute_command(Command* cmd) {
     if (*value == '\0' && cmd->argv.data[1] != NULL)
       value = cmd->argv.data[1];
     
-    Variable* var = set_variable(variable_table, name, value, parse_variable_type(value), false);
-    if (var == NULL) {
-      print_error("Failed to set variable");
-      return -1;
+    if (value[0] == '(' && value[strlen(value) - 1] == ')') {
+      parse_and_set_array(variable_table, name, value);
+    } if (value[0] == '{' && value[strlen(value) - 1] == '}') {
+      parse_and_set_associative_array(variable_table, name, value);
+    } else if (open_bracket && close_bracket && open_bracket < close_bracket) {
+      *open_bracket = '\0';
+      *close_bracket = '\0';
+      char* key = open_bracket + 1;
+      
+      Variable* var = get_variable(variable_table, name);
+      if (var != NULL && var->type == VAR_ASSOCIATIVE_ARRAY) {
+        set_associative_array_variable(variable_table, name, key, value);
+      } else if (var != NULL && var->type == VAR_ARRAY) {
+        long long index;
+        StrconvResult result = ratoll(key, &index);
+        if (result.is_err) {
+          print_error("Invalid key for associative array");
+          return -1;
+        }
+        array_set_element(variable_table, name, (size_t)index, value);
+      } else {
+        print_error("Variable is not an array or associative array");
+        return -1;
+      }
+    } else {
+      Variable* var = set_variable(variable_table, name, value, parse_variable_type(value), false);
+      if (var == NULL) {
+        print_error("Failed to set variable");
+        return -1;
+      }
     }
-    
     *equals_sign = '=';
     return 0;
   } else if (should_not_expand) {
     char** new_data = rcalloc(cmd->argv.capacity, sizeof(char*));
     size_t new_size = 0;
     for (int i = 0; cmd->argv.data[i] != NULL; i++) {
-      int len = strlen(cmd->argv.data[i]);
+      size_t len = strlen(cmd->argv.data[i]);
       if (len > 0 && cmd->argv.data[i][len - 1] == '=') {
         if (cmd->argv.data[i + 1] != NULL) {
-          int new_len = len + strlen(cmd->argv.data[i + 1]) + 1;
+          size_t new_len = len + strlen(cmd->argv.data[i + 1]) + 1;
           new_data[new_size] = rcalloc(new_len, sizeof(char));
           snprintf(new_data[new_size], new_len, "%s%s", cmd->argv.data[i], cmd->argv.data[i + 1]);
           i++;
@@ -299,7 +327,7 @@ int execute_command_list(CommandList* list) {
       if (status == 0 && cmd->or_next)
         break;
     }
-    cmd = cmd->next;
+    if (cmd != NULL) cmd = cmd->next;
   }
   
   return status;

@@ -7,6 +7,7 @@
 #include "error.h"
 #include "expr.h"
 #include "memory.h"
+#include "array.h"
 
 extern VariableTable* variable_table;
 
@@ -34,9 +35,9 @@ int builtin_readonly(Command *cmd) {
             return 1;
         }
       }
-      option_end = i + 1;
+      option_end = (int)i + 1;
     } else if (strcmp(cmd->argv.data[i], "--") == 0) {
-      option_end = i + 1;
+      option_end = (int)i + 1;
       break;
     } else {
       break;
@@ -47,15 +48,15 @@ int builtin_readonly(Command *cmd) {
     for (int i = 0; i < variable_table->size; i++) {
       Variable *var = &variable_table->variables[i];
       if (is_variable_flag_set(&var->flags, VarFlag_ReadOnly)) {
-        for (int j = 0; j < var->array_size; j++) {
-          printf("readonly %s[%d]=%s\n", var->name, j, var->data._array[j]);
-        }
+        char* value = va_value_to_string(&var->data);
+        printf("readonly %s=%s\n", var->name, value);
+        rfree(value);
       }
     }
     return 0;
   }
 
-  for (size_t i = option_end; i < cmd->argv.size; i++) {
+  for (size_t i = (size_t)option_end; i < cmd->argv.size; i++) {
     char *arg = cmd->argv.data[i];
     char *equals = strchr(arg, '=');
     char *name, *value = NULL;
