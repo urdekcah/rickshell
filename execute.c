@@ -68,7 +68,7 @@ int execute_command(Command* cmd) {
         }
         array_set_element(variable_table, name, (size_t)index, value);
       } else {
-        print_error("Invalid value for associative array");
+        print_error("Variable is not an array or associative array");
         return -1;
       }
     } else if (value[0] == '(' && value[strlen(value) - 1] == ')') {

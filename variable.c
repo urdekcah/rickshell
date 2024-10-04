@@ -646,6 +646,7 @@ char* expand_variables(VariableTable* table, const char* input) {
         const char* var_end = var_start;
         while (isalnum(*var_end) || *var_end == '_') var_end++;
         
+        const char* var_nv = var_end;
         size_t var_name_len = (size_t)(var_end - var_start);
         char* var_name = rmalloc(var_name_len + 1);
         strncpy(var_name, var_start, var_name_len);
@@ -653,10 +654,58 @@ char* expand_variables(VariableTable* table, const char* input) {
 
         Variable* var = get_variable(table, var_name);
         if (var) {
-          dynstrcpy(&result, &result_size, &result_len, var->value);
+          if (var->type == VAR_ARRAY || var->type == VAR_ASSOCIATIVE_ARRAY) {
+            const char* array_index_start = strchr(var_nv, '[');
+            if (array_index_start) {
+              const char* array_index_end = strchr(array_index_start, ']');
+              if (array_index_end) {
+                size_t index_len = (size_t)(array_index_end - array_index_start - 1);
+                char* index_str = rmalloc(index_len + 1);
+                strncpy(index_str, array_index_start + 1, index_len);
+                index_str[index_len] = '\0';
+
+                switch (var->type) {
+                  case VAR_ARRAY: {
+                    long long index;
+                    StrconvResult sres = ratoll(index_str, &index);
+                    if (!sres.is_err && index >= 0 && index < (long long)var->data._array.size) {
+                      va_value_t* value = array_checked_get(var->data._array, (size_t)index);
+                      char* str_value = va_value_to_string(value);
+                      dynstrcpy(&result, &result_size, &result_len, str_value);
+                      rfree(str_value);
+                    }
+                    break;
+                  }
+                  case VAR_ASSOCIATIVE_ARRAY: {
+                    va_value_t value;
+                    size_t value_size;
+                    MapResult map_result = map_get(var->data._map, index_str, &value, &value_size);
+                    if (!map_result.is_err) {
+                      char* str_value = va_value_to_string(&value);
+                      dynstrcpy(&result, &result_size, &result_len, str_value);
+                      rfree(str_value);
+                    }
+                    break;
+                  }
+                  default:
+                    break;
+                }
+                rfree(index_str);
+              }
+              p = array_index_end + 1;
+            } else {
+              char* value = va_value_to_string(&var->data);
+              dynstrcpy(&result, &result_size, &result_len, value);
+              rfree(value);
+            }
+          } else {
+            char* value = va_value_to_string(&var->data);
+            dynstrcpy(&result, &result_size, &result_len, value);
+            rfree(value);
+          }
         }
         rfree(var_name);
-        p = var_end;
+        p = (p > var_end) ? p : var_end;
         continue;
       }
     }
