@@ -51,7 +51,11 @@ int execute_command(Command* cmd) {
     if (*value == '\0' && cmd->argv.data[1] != NULL)
       value = cmd->argv.data[1];
     
-    if (open_bracket && close_bracket && open_bracket < close_bracket) {
+    if (value[0] == '(' && value[strlen(value) - 1] == ')') {
+      parse_and_set_array(variable_table, name, value);
+    } if (value[0] == '{' && value[strlen(value) - 1] == '}') {
+      parse_and_set_associative_array(variable_table, name, value);
+    } else if (open_bracket && close_bracket && open_bracket < close_bracket) {
       *open_bracket = '\0';
       *close_bracket = '\0';
       char* key = open_bracket + 1;
@@ -71,8 +75,6 @@ int execute_command(Command* cmd) {
         print_error("Variable is not an array or associative array");
         return -1;
       }
-    } else if (value[0] == '(' && value[strlen(value) - 1] == ')') {
-      parse_and_set_array(variable_table, name, value);
     } else {
       Variable* var = set_variable(variable_table, name, value, parse_variable_type(value), false);
       if (var == NULL) {

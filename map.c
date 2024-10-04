@@ -9,7 +9,7 @@
 #include "result.h"
 #include "wyhash.h"
 
-map* create_map() {
+map* create_map_with_func(MapFreeFn value_free) {
   map* m = (map*)rmalloc(sizeof(map));
   if (!m) {
     return NULL;
@@ -27,8 +27,12 @@ map* create_map() {
     rfree(m);
     return NULL;
   }
-  m->value_free = rfree;
+  m->value_free = value_free;
   return m;
+}
+
+map* create_map() {
+  return create_map_with_func(rfree);
 }
 
 MapResult resize_map(map* m, size_t new_capacity) {

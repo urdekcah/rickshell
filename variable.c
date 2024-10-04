@@ -9,6 +9,8 @@
 #include "execute.h"
 #include "strconv.h"
 #include "rstring.h"
+#include "map.h"
+#include "iterator.h"
 
 #define INITIAL_TABLE_SIZE 10
 
@@ -37,6 +39,9 @@ void free_variable_table(VariableTable* table) {
 }
 
 Variable* create_new_variable(VariableTable* table, const char* name, VariableType type) {
+  Variable* existing = get_variable(table, name);
+  if (existing != NULL) return existing;
+
   if (table->size == table->capacity) {
     table->capacity *= 2;
     table->variables = rrealloc(table->variables, (size_t)(table->capacity * (int)sizeof(Variable)));
@@ -60,7 +65,7 @@ Variable* create_new_variable(VariableTable* table, const char* name, VariableTy
       var->data._number = 0;
       break;
     case VAR_ASSOCIATIVE_ARRAY:
-      var->data._map = create_map();
+      var->data._map = create_map_with_func(vfree_va_value);
       break;
     case VAR_ARRAY:
       var->data._array = create_array(sizeof(va_value_t));
@@ -105,9 +110,8 @@ Variable* set_variable(VariableTable* table, const char* name, const char* value
       parse_and_set_array(variable_table, name, value);
       break;
     case VAR_ASSOCIATIVE_ARRAY:
-      if (var->data._map == NULL) {
-        var->data._map = create_map();
-      }
+      if (var->data._map) map_free(var->data._map);
+      parse_and_set_associative_array(variable_table, name, value);
       break;
     default:
       break;
@@ -166,6 +170,41 @@ void parse_and_set_array(VariableTable* table, const char* name, const char* val
   }
 
   rfree(trimmed_value);
+}
+
+// { [One]=Delftstack1 [Two]=Delftstack2 [Three]=Delftstack3 }
+void parse_and_set_associative_array(VariableTable* table, const char* name, const char* input) {
+  if (input == NULL || table == NULL) return;
+  Variable* var = create_new_variable(table, name, VAR_ASSOCIATIVE_ARRAY);
+
+  if (input[0] != '{' || input[strlen(input) - 1] != '}') {
+    fprintf(stderr, "Invalid input format\n");
+    return;
+  }
+
+  char* trimmed_input = strndup(input + 1, strlen(input) - 2);
+
+  char* token = strtok(trimmed_input, " ");
+  while (token != NULL) {
+    char* equal_sign = strchr(token, '=');
+    if (equal_sign != NULL) {
+      *equal_sign = '\0';
+      if (token[0] != '[') {
+        fprintf(stderr, "Invalid key format\n");
+        free(trimmed_input);
+        return;
+      }
+      char* key = token + 1;
+      char* value = equal_sign + 1;
+      char* close_bracket = strchr(key, ']');
+      if (close_bracket != NULL)
+        *close_bracket = '\0';
+      set_associative_array_variable(table, var->name, key, value);
+    }
+    token = strtok(NULL, " ");
+  }
+  
+  free(trimmed_input);
 }
 
 void array_set_element(VariableTable* table, const char* name, size_t index, const char* value) {
@@ -245,7 +284,15 @@ void set_associative_array_variable(VariableTable* table, const char* name, cons
     return;
   }
 
-  va_value_t new_value = string_to_va_value(value, VAR_STRING);
+  va_value_t outval;
+  size_t outval_size;
+  MapResult result = map_get(var->data._map, key, &outval, &outval_size);
+  if (!result.is_err) {
+    free_va_value(&outval);
+  }
+
+  VariableType vt = parse_variable_type(value);
+  va_value_t new_value = string_to_va_value(value, vt);
   map_insert(var->data._map, key, &new_value, sizeof(va_value_t));
 }
 
@@ -259,7 +306,7 @@ char* va_value_to_string(const va_value_t* value) {
       result = rmalloc(32);
       snprintf(result, 32, "%lld", value->_number);
       break;
-    case VAR_ARRAY:
+    case VAR_ARRAY: {
       size_t total_length = 2;
       for (size_t i = 0; i < value->_array.size; ++i) {
         va_value_t element = *(va_value_t*)array_checked_get(value->_array, i);
@@ -279,8 +326,35 @@ char* va_value_to_string(const va_value_t* value) {
       }
       strcat(result, ")");
       break;
-    case VAR_ASSOCIATIVE_ARRAY:
+    }
+    case VAR_ASSOCIATIVE_ARRAY: {
+      size_t total_length = 4;
+      MapIterator it = map_iterator(value->_map);
+      while (map_has_next(&it)) {
+        const char* key = map_next(&it);
+        va_value_t* element = map_iterator_get_value(&it, NULL);
+        char* element_str = va_value_to_string(element);
+        total_length += strlen(key) + strlen(element_str) + 4;
+        free(element_str);
+      }
+      result = rmalloc(total_length);
+      strcpy(result, "{ ");
+      map_iterator_reset(&it);
+      while (map_has_next(&it)) {
+        const char* key = map_next(&it);
+        va_value_t* element = map_iterator_get_value(&it, NULL);
+        char* element_str = va_value_to_string(element);
+        strcat(result, "[");
+        strcat(result, key);
+        strcat(result, "]=");
+        strcat(result, element_str);
+        if (map_has_next(&it))
+          strcat(result, " ");
+        free(element_str);
+      }
+      strcat(result, " }");
       break;
+    }
     default:
       result = rstrdup("");
       break;
@@ -298,7 +372,7 @@ va_value_t string_to_va_value(const char* str, VariableType type) {
     case VAR_INTEGER:
       result._number = atoll(str);
       break;
-    case VAR_ARRAY:
+    case VAR_ARRAY: {
       result._array = create_array(sizeof(va_value_t));
       char* token;
       char* rest = rstrdup(str + 1);
@@ -310,9 +384,36 @@ va_value_t string_to_va_value(const char* str, VariableType type) {
       }
       rfree(rest);
       break;
-    case VAR_ASSOCIATIVE_ARRAY:
-      result._map = create_map();
+    }
+    case VAR_ASSOCIATIVE_ARRAY: {
+      result._map = create_map_with_func(vfree_va_value);
+      char* trimmed_input = strndup(str + 1, strlen(str) - 2);
+      char* token = strtok(trimmed_input, " ");
+      while (token != NULL) {
+        char* equal_sign = strchr(token, '=');
+        if (equal_sign != NULL) {
+          *equal_sign = '\0';
+          if (token[0] != '[') {
+            fprintf(stderr, "Invalid key format\n");
+            free(trimmed_input);
+            result.type = VAR_STRING;
+            result._str = rstrdup("");
+            break;
+          }
+          char* key = token + 1;
+          char* value = equal_sign + 1;
+          char* close_bracket = strchr(key, ']');
+          if (close_bracket != NULL)
+            *close_bracket = '\0';
+          VariableType vt = parse_variable_type(value);
+          va_value_t new_value = string_to_va_value(value, vt);
+          map_insert(result._map, key, &new_value, sizeof(va_value_t));
+        }
+        token = strtok(NULL, " ");
+      }
+      free(trimmed_input);
       break;
+    }
     default:
       result.type = VAR_STRING;
       result._str = rstrdup("");
@@ -322,19 +423,30 @@ va_value_t string_to_va_value(const char* str, VariableType type) {
 }
 
 void free_va_value(va_value_t* value) {
+  if (value == NULL) return;
   switch (value->type) {
     case VAR_STRING:
       rfree(value->_str);
       break;
     case VAR_ARRAY:
+      for (size_t i = 0; i < value->_array.size; i++) {
+        va_value_t* elem = array_checked_get(value->_array, i);
+        free_va_value(elem);
+      }
       array_free(&value->_array);
       break;
     case VAR_ASSOCIATIVE_ARRAY:
-      map_free(value->_map);
+      if (value->_map != NULL)
+        map_free(value->_map);
       break;
     default:
       break;
   }
+}
+
+void vfree_va_value(void* value) {
+  free_va_value((va_value_t*)value);
+  rfree(value);
 }
 
 void free_variable(Variable* var) {
@@ -342,6 +454,7 @@ void free_variable(Variable* var) {
   rfree(var->name);
   rfree(var->value);
   free_va_value(&var->data);
+  rfree(var);
 }
 
 void cleanup_variables() {

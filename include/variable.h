@@ -62,6 +62,7 @@ Variable* get_variable(VariableTable* table, const char* name);
 void unset_variable(VariableTable* table, const char* name);
 void parse_and_set_array(VariableTable* table, const char* name, const char* value);
 void array_set_element(VariableTable* table, const char* name, size_t index, const char* value);
+void parse_and_set_associative_array(VariableTable* table, const char* name, const char* input);
 bool do_not_expand_this_builtin(const char* name);
 VariableType parse_variable_type(const char* value);
 Variable* resolve_nameref(Variable* var);
@@ -69,6 +70,7 @@ void set_associative_array_variable(VariableTable* table, const char* name, cons
 char* va_value_to_string(const va_value_t* value);
 va_value_t string_to_va_value(const char* str, VariableType type);
 void free_va_value(va_value_t* value);
+void vfree_va_value(void* value);
 void free_variable(Variable* var);
 void cleanup_variables();
 char* expand_variables(VariableTable* table, const char* input);

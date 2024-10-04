@@ -14,13 +14,15 @@ typedef struct {
   bool is_occupied;
 } map_kv;
 
+typedef void (*MapFreeFn)(void*);
+
 typedef struct {
   map_kv* buckets;
   size_t capacity;
   size_t size;
   size_t num_deleted;
   pthread_mutex_t lock;
-  void (*value_free)(void*);
+  MapFreeFn value_free;
 } map;
 
 typedef enum {
@@ -31,6 +33,7 @@ typedef enum {
   MAP_ERROR_INVALID_ARGUMENT
 } MapErrCode;
 
+map* create_map_with_func(MapFreeFn value_free);
 map* create_map();
 MapResult resize_map(map* m, size_t new_capacity);
 MapResult map_insert(map* m, const char* key, void* value, size_t value_size);
