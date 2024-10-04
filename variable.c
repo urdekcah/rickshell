@@ -172,7 +172,6 @@ void parse_and_set_array(VariableTable* table, const char* name, const char* val
   rfree(trimmed_value);
 }
 
-// { [One]=Delftstack1 [Two]=Delftstack2 [Three]=Delftstack3 }
 void parse_and_set_associative_array(VariableTable* table, const char* name, const char* input) {
   if (input == NULL || table == NULL) return;
   Variable* var = create_new_variable(table, name, VAR_ASSOCIATIVE_ARRAY);
@@ -773,9 +772,11 @@ char* expand_variables(VariableTable* table, const char* input) {
               const char* array_index_end = strchr(array_index_start, ']');
               if (array_index_end) {
                 size_t index_len = (size_t)(array_index_end - array_index_start - 1);
-                char* index_str = rmalloc(index_len + 1);
-                strncpy(index_str, array_index_start + 1, index_len);
-                index_str[index_len] = '\0';
+                char* temp = rmalloc(index_len + 1);
+                strncpy(temp, array_index_start + 1, index_len);
+                temp[index_len] = '\0';
+                char* index_str = expand_variables(table, temp);
+                rfree(temp);
 
                 switch (var->type) {
                   case VAR_ARRAY: {
