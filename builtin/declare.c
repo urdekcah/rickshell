@@ -74,7 +74,7 @@ int builtin_declare(Command *cmd) {
         else if (set_lowercase) ((unset_mode)?unset_variable_flag:set_variable_flag)(&var->flags, VarFlag_Lowercase);
         set_variable(variable_table, name, value, type, false);
       } else if (type == VAR_NAMEREF) {
-        var->data._str = rstrdup(value);
+        var->value._str = rstrdup(value);
         if (get_variable(variable_table, value) == NULL)
           set_variable(variable_table, value, "", VAR_STRING, false);
       } else {

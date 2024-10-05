@@ -48,7 +48,7 @@ int builtin_readonly(Command *cmd) {
     for (int i = 0; i < variable_table->size; i++) {
       Variable *var = &variable_table->variables[i];
       if (is_variable_flag_set(&var->flags, VarFlag_ReadOnly)) {
-        char* value = va_value_to_string(&var->data);
+        char* value = va_value_to_string(&var->value);
         printf("readonly %s=%s\n", var->name, value);
         rfree(value);
       }
@@ -76,8 +76,8 @@ int builtin_readonly(Command *cmd) {
           print_error("Cannot modify readonly variable");
           return 1;
         }
-        rfree(var->value);
-        var->value = rstrdup(value);
+        rfree(var->str);
+        var->str = rstrdup(value);
       }
       set_variable_flag(&var->flags, VarFlag_ReadOnly);
     } else {
@@ -90,9 +90,9 @@ int builtin_readonly(Command *cmd) {
     }
     
     if (refer_to_indexed_array) {
-      var->type = VAR_ARRAY;
+      var->value.type = VAR_ARRAY;
     } else if (refer_to_associative_array) {
-      var->type = VAR_ASSOCIATIVE_ARRAY;
+      var->value.type = VAR_ASSOCIATIVE_ARRAY;
     }
     
     if (equals) {

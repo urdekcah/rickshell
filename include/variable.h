@@ -35,9 +35,8 @@ typedef enum {
 
 typedef struct {
   char* name;
-  char* value;
-  VariableType type;
-  va_value_t data;
+  char* str;
+  va_value_t value;
   va_flag_t flags;
   int array_size;
   int array_capacity;

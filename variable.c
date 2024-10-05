@@ -31,8 +31,8 @@ VariableTable* create_variable_table() {
 void free_variable_table(VariableTable* table) {
   for (int i = 0; i < table->size; i++) {
     rfree(table->variables[i].name);
-    rfree(table->variables[i].value);
-    free_va_value(&table->variables[i].data);
+    rfree(table->variables[i].str);
+    free_va_value(&table->variables[i].value);
   }
   rfree(table->variables);
   rfree(table);
@@ -49,26 +49,25 @@ Variable* create_new_variable(VariableTable* table, const char* name, VariableTy
 
   Variable* var = &table->variables[table->size++];
   var->name = rstrdup(name);
-  var->value = NULL;
-  var->type = type;
+  var->str = NULL;
   var->flags = 0;
   var->array_size = 0;
 
-  memset(&var->data, 0, sizeof(va_value_t));
-  var->data.type = type;
+  memset(&var->value, 0, sizeof(va_value_t));
+  var->value.type = type;
   
   switch (type) {
     case VAR_STRING:
-      var->data._str = NULL;
+      var->value._str = NULL;
       break;
     case VAR_INTEGER:
-      var->data._number = 0;
+      var->value._number = 0;
       break;
     case VAR_ASSOCIATIVE_ARRAY:
-      var->data._map = create_map_with_func(vfree_va_value);
+      var->value._map = create_map_with_func(vfree_va_value);
       break;
     case VAR_ARRAY:
-      var->data._array = create_array(sizeof(va_value_t));
+      var->value._array = create_array(sizeof(va_value_t));
       break;
     default:
       break;
@@ -78,15 +77,15 @@ Variable* create_new_variable(VariableTable* table, const char* name, VariableTy
 }
 
 void process_string_variable(Variable* var) {
-  if (!var->data.type == VAR_STRING) return;
-  if (var->data._str == NULL) return;
-  if (is_variable_flag_set(&var->flags, VarFlag_Uppercase)) strupper(var->data._str);
-  else if (is_variable_flag_set(&var->flags, VarFlag_Lowercase)) strlower(var->data._str);
+  if (!var->value.type == VAR_STRING) return;
+  if (var->value._str == NULL) return;
+  if (is_variable_flag_set(&var->flags, VarFlag_Uppercase)) strupper(var->value._str);
+  else if (is_variable_flag_set(&var->flags, VarFlag_Lowercase)) strlower(var->value._str);
 }
 
 void process_exported_variable(Variable* var) {
   if (is_variable_flag_set(&var->flags, VarFlag_Exported)) {
-    char* value = va_value_to_string(&var->data);
+    char* value = va_value_to_string(&var->value);
     setenv(var->name, value, 1);
     rfree(value);
   }
@@ -97,8 +96,8 @@ Variable* set_variable(VariableTable* table, const char* name, const char* value
   if (var == NULL) {
     var = create_new_variable(table, name, type);
   } else {
-    rfree(var->value);
-    free_va_value(&var->data);
+    rfree(var->str);
+    free_va_value(&var->value);
   }
 
   if (is_variable_flag_set(&var->flags, VarFlag_ReadOnly)) {
@@ -106,28 +105,27 @@ Variable* set_variable(VariableTable* table, const char* name, const char* value
     return NULL;
   }
 
-  var->value = rstrdup(value);
-  var->type = type;
-  var->data.type = type;
+  var->str = rstrdup(value);
+  var->value.type = type;
 
   switch (type) {
     case VAR_STRING:
-      var->data._str = rstrdup(value);
+      var->value._str = rstrdup(value);
       process_string_variable(var);
       break;
     case VAR_INTEGER:
-      StrconvResult result = ratoll(value, &var->data._number);
+      StrconvResult result = ratoll(value, &var->value._number);
       if (result.is_err) {
         print_error("Failed to convert string to integer");
         return NULL;
       }
       break;
     case VAR_ARRAY:
-      if (var->data._array.data) array_free(&var->data._array);
+      if (var->value._array.data) array_free(&var->value._array);
       parse_and_set_array(variable_table, name, value);
       break;
     case VAR_ASSOCIATIVE_ARRAY:
-      if (var->data._map) map_free(var->data._map);
+      if (var->value._map) map_free(var->value._map);
       parse_and_set_associative_array(variable_table, name, value);
       break;
     default:
@@ -142,7 +140,7 @@ Variable* get_variable(VariableTable* table, const char* name) {
   for (int i = 0; i < table->size; i++) {
     if (strcmp(table->variables[i].name, name) == 0) {
       Variable* var = &table->variables[i];
-      if (var->type == VAR_NAMEREF) {
+      if (var->value.type == VAR_NAMEREF) {
         Variable* resolved = resolve_nameref(var);
         if (resolved == NULL) {
           print_error("Failed to resolve nameref");
@@ -164,8 +162,8 @@ void unset_variable(VariableTable* table, const char* name) {
         return;
       }
       rfree(table->variables[i].name);
-      rfree(table->variables[i].value);
-      free_va_value(&table->variables[i].data);
+      rfree(table->variables[i].str);
+      free_va_value(&table->variables[i].value);
       memmove(&table->variables[i], &table->variables[i + 1], (size_t)((table->size - i - 1) * (int)sizeof(Variable)));
       table->size--;
       return;
@@ -184,7 +182,7 @@ void parse_and_set_array(VariableTable* table, const char* name, const char* val
   while ((token = strtok_r(rest, " ", &rest)) != NULL) {
     VariableType type = parse_variable_type(token);
     va_value_t _value = string_to_va_value(token, type);
-    array_push(&var->data._array, &_value);
+    array_push(&var->value._array, &_value);
   }
 
   rfree(trimmed_value);
@@ -226,19 +224,19 @@ void parse_and_set_associative_array(VariableTable* table, const char* name, con
 
 void array_set_element(VariableTable* table, const char* name, size_t index, const char* value) {
   Variable* var = get_variable(table, name);
-  if (var == NULL || var->type != VAR_ARRAY) {
+  if (var == NULL || var->value.type != VAR_ARRAY) {
     print_error("Variable is not an array");
     return;
   }
 
-  if (index >= var->data._array.size) {
+  if (index >= var->value._array.size) {
     print_error("Index out of bounds");
     return;
   }
 
   VariableType type = parse_variable_type(value);
   va_value_t new_value = string_to_va_value(value, type);
-  array_index_set(&var->data._array, index, &new_value);
+  array_index_set(&var->value._array, index, &new_value);
 }
 
 bool do_not_expand_this_builtin(const char* name) {
@@ -272,23 +270,23 @@ VariableType parse_variable_type(const char* value) {
 }
 
 Variable* resolve_nameref(Variable* var) {
-  if (var == NULL || var->type != VAR_NAMEREF) {
+  if (var == NULL || var->value.type != VAR_NAMEREF) {
     return var;
   }
   
   Variable* resolved = var;
   int depth = 0;
-  while (resolved != NULL && resolved->type == VAR_NAMEREF) {
+  while (resolved != NULL && resolved->value.type == VAR_NAMEREF) {
     if (depth++ > 100) {
       print_error("Too many levels of indirection");
       return NULL;
     }
-    resolved = get_variable(variable_table, resolved->data._str);
+    resolved = get_variable(variable_table, resolved->value._str);
     if (resolved == NULL) {
       print_error("Variable not found");
       return NULL;
     }
-    if (resolved->type != VAR_NAMEREF) break;
+    if (resolved->value.type != VAR_NAMEREF) break;
   }
   return resolved;
 }
@@ -297,21 +295,21 @@ void set_associative_array_variable(VariableTable* table, const char* name, cons
   Variable* var = get_variable(table, name);
   if (var == NULL) var = create_new_variable(table, name, VAR_ASSOCIATIVE_ARRAY);
 
-  if (var->type != VAR_ASSOCIATIVE_ARRAY) {
+  if (var->value.type != VAR_ASSOCIATIVE_ARRAY) {
     print_error("Variable is not an associative array");
     return;
   }
 
   va_value_t outval;
   size_t outval_size;
-  MapResult result = map_get(var->data._map, key, &outval, &outval_size);
+  MapResult result = map_get(var->value._map, key, &outval, &outval_size);
   if (!result.is_err) {
     free_va_value(&outval);
   }
 
   VariableType vt = parse_variable_type(value);
   va_value_t new_value = string_to_va_value(value, vt);
-  map_insert(var->data._map, key, &new_value, sizeof(va_value_t));
+  map_insert(var->value._map, key, &new_value, sizeof(va_value_t));
 }
 
 char* va_value_to_string(const va_value_t* value) {
@@ -472,8 +470,8 @@ void vfree_va_value(void* value) {
 void free_variable(Variable* var) {
   if (var == NULL) return;
   rfree(var->name);
-  rfree(var->value);
-  free_va_value(&var->data);
+  rfree(var->str);
+  free_va_value(&var->value);
   rfree(var);
 }
 
@@ -515,24 +513,24 @@ char* expand_variables(VariableTable* table, const char* input) {
             char* key = open_bracket + 1;
 
             Variable* var = get_variable(table, var_name);
-            if (var && var->type == VAR_ASSOCIATIVE_ARRAY) {
+            if (var && var->value.type == VAR_ASSOCIATIVE_ARRAY) {
               va_value_t value;
               size_t value_size;
-              MapResult map_result = map_get(var->data._map, key, &value, &value_size);
+              MapResult map_result = map_get(var->value._map, key, &value, &value_size);
               if (!map_result.is_err) {
                 char* str_value = va_value_to_string(&value);
                 dynstrcpy(&result, &result_size, &result_len, str_value);
                 rfree(str_value);
               }
-            } else if (var && var->type == VAR_ARRAY) {
+            } else if (var && var->value.type == VAR_ARRAY) {
               long long index;
               StrconvResult sres = ratoll(key, &index);
               if (sres.is_err) {
                 print_error("Invalid key for associative array");
                 return NULL;
               }
-              if (index >= 0 && index < (long long)var->data._array.size) {
-                va_value_t* value = array_checked_get(var->data._array, (size_t)index);
+              if (index >= 0 && index < (long long)var->value._array.size) {
+                va_value_t* value = array_checked_get(var->value._array, (size_t)index);
                 char* str_value = va_value_to_string(value);
                 dynstrcpy(&result, &result_size, &result_len, str_value);
                 rfree(str_value);
@@ -543,7 +541,7 @@ char* expand_variables(VariableTable* table, const char* input) {
               const char* vname = hash + 1;
               Variable* var = get_variable(table, vname);
               if (var) {
-                size_t length = strlen(var->value);
+                size_t length = strlen(var->str);
                 char length_str[20];
                 snprintf(length_str, sizeof(length_str), "%ld", length);
                 dynstrcpy(&result, &result_size, &result_len, length_str);
@@ -559,7 +557,7 @@ char* expand_variables(VariableTable* table, const char* input) {
                 
                 Variable* var = get_variable(table, var_name);
                 if (var) {
-                  char* value = rstrdup(var->value);
+                  char* value = rstrdup(var->str);
                   char* new_value = remove_prefix(value, pattern, is_longest_match);
 
                   dynstrcpy(&result, &result_size, &result_len, new_value);
@@ -585,9 +583,9 @@ char* expand_variables(VariableTable* table, const char* input) {
             } else {
               Variable* indirect_var = get_variable(table, indirect_var_name);
               if (indirect_var) {
-                Variable* target_var = get_variable(table, indirect_var->value);
+                Variable* target_var = get_variable(table, indirect_var->str);
                 if (target_var) {
-                  dynstrcpy(&result, &result_size, &result_len, target_var->value);
+                  dynstrcpy(&result, &result_size, &result_len, target_var->str);
                 }
               }
             }
@@ -595,7 +593,7 @@ char* expand_variables(VariableTable* table, const char* input) {
             *caret = '\0';
             Variable* var = get_variable(table, var_name);
             if (var) {
-              char* value = rstrdup(var->value);
+              char* value = rstrdup(var->str);
               char* pattern = (*(caret + 1) == '^') ? caret + 2 : caret + 1;
               bool convert_all = (*(caret + 1) == '^');
               
@@ -621,7 +619,7 @@ char* expand_variables(VariableTable* table, const char* input) {
             *comma = '\0';
             Variable* var = get_variable(table, var_name);
             if (var) {
-              char* value = rstrdup(var->value);
+              char* value = rstrdup(var->str);
               if (*(comma + 1) == ',') {
                 for (char* c = value; *c; c++) {
                   *c = (char)tolower(*c);
@@ -640,7 +638,7 @@ char* expand_variables(VariableTable* table, const char* input) {
               long offset = strtol(colon + 1, &endptr, 10);
               char* length_str = (*endptr == ':') ? endptr + 1 : NULL;
 
-              size_t var_len = strlen(var->value);
+              size_t var_len = strlen(var->str);
               
               if (offset < 0) {
                 offset = (long)var_len + offset;
@@ -650,14 +648,14 @@ char* expand_variables(VariableTable* table, const char* input) {
                 long length = strtol(length_str, NULL, 10);
                 if (offset >= 0 && length > 0 && offset + length <= (long)var_len) {
                   char* temp = rmalloc((size_t)length + 1);
-                  strncpy(temp, var->value + offset, (size_t)length);
+                  strncpy(temp, var->str + offset, (size_t)length);
                   temp[length] = '\0';
                   dynstrcpy(&result, &result_size, &result_len, temp);
                   rfree(temp);
                 }
               } else {
                 if (offset >= 0 && offset < (long)var_len) {
-                  dynstrcpy(&result, &result_size, &result_len, var->value + offset);
+                  dynstrcpy(&result, &result_size, &result_len, var->str + offset);
                 }
               }
             }
@@ -667,7 +665,7 @@ char* expand_variables(VariableTable* table, const char* input) {
             if (var) {
               if (*(at + 1) == 'Q') {
                 dynstrcpy(&result, &result_size, &result_len, "'");
-                for (char* c = var->value; *c; c++) {
+                for (char* c = var->str; *c; c++) {
                   if (*c == '\'') {
                     dynstrcpy(&result, &result_size, &result_len, "'\\''");
                   } else {
@@ -677,7 +675,7 @@ char* expand_variables(VariableTable* table, const char* input) {
                 }
                 dynstrcpy(&result, &result_size, &result_len, "'");
               } else if (*(at + 1) == 'E') {
-                int temp = parse_and_execute(var->value);
+                int temp = parse_and_execute(var->str);
                 char exit_status[20];
                 snprintf(exit_status, sizeof(exit_status), "%d", temp);
                 dynstrcpy(&result, &result_size, &result_len, exit_status);
@@ -690,17 +688,17 @@ char* expand_variables(VariableTable* table, const char* input) {
 
             Variable* var = get_variable(table, var_name);
             if (operation == '+') {
-              if (var && var->value && strlen(var->value) > 0) {
+              if (var && var->str && strlen(var->str) > 0) {
                 dynstrcpy(&result, &result_size, &result_len, value);
               }
             } else {
-              if (!var || !var->value || strlen(var->value) == 0) {
+              if (!var || !var->str || strlen(var->str) == 0) {
                 if (operation == '=') {
                   var = set_variable(table, var_name, value, parse_variable_type(value), false);
                 }
                 dynstrcpy(&result, &result_size, &result_len, value);
               } else {
-                dynstrcpy(&result, &result_size, &result_len, var->value);
+                dynstrcpy(&result, &result_size, &result_len, var->str);
               }
             }
           } else if (question) {
@@ -708,10 +706,10 @@ char* expand_variables(VariableTable* table, const char* input) {
             char* error_message = question + 1;
 
             Variable* var = get_variable(table, var_name);
-            if (!var || !var->value || strlen(var->value) == 0) {
+            if (!var || !var->str || strlen(var->str) == 0) {
               print_error(error_message);
             } else {
-              dynstrcpy(&result, &result_size, &result_len, var->value);
+              dynstrcpy(&result, &result_size, &result_len, var->str);
             }
           } else if (slash) {
             *slash = '\0';
@@ -726,13 +724,13 @@ char* expand_variables(VariableTable* table, const char* input) {
               replacement++;
               
               if (var) {
-                char* new_value = str_replace(var->value, pattern, replacement, replace_all);
+                char* new_value = str_replace(var->str, pattern, replacement, replace_all);
                 dynstrcpy(&result, &result_size, &result_len, new_value);
                 rfree(new_value);
               }
             } else {
               if (var) {
-                char* temp_result = rstrdup(var->value);
+                char* temp_result = rstrdup(var->str);
                 char* pos = temp_result;
                 while ((pos = strstr(pos, pattern)) != NULL) {
                   memmove(pos, pos + strlen(pattern), strlen(pos + strlen(pattern)) + 1);
@@ -750,14 +748,14 @@ char* expand_variables(VariableTable* table, const char* input) {
             if (var) {
               bool greedy = (*(percent + 1) == '%');
               if (greedy) pattern++;
-              char* new_value = remove_suffix(var->value, pattern, greedy);
+              char* new_value = remove_suffix(var->str, pattern, greedy);
               dynstrcpy(&result, &result_size, &result_len, new_value);
               rfree(new_value);
             }
           } else {
             Variable* var = get_variable(table, var_name);
             if (var) {
-              dynstrcpy(&result, &result_size, &result_len, var->value);
+              dynstrcpy(&result, &result_size, &result_len, var->str);
             }
           }
           rfree(var_name);
@@ -787,7 +785,7 @@ char* expand_variables(VariableTable* table, const char* input) {
 
         Variable* var = get_variable(table, var_name);
         if (var) {
-          if (var->type == VAR_ARRAY || var->type == VAR_ASSOCIATIVE_ARRAY) {
+          if (var->value.type == VAR_ARRAY || var->value.type == VAR_ASSOCIATIVE_ARRAY) {
             const char* array_index_start = strchr(var_nv, '[');
             if (array_index_start) {
               const char* array_index_end = strchr(array_index_start, ']');
@@ -799,12 +797,12 @@ char* expand_variables(VariableTable* table, const char* input) {
                 char* index_str = expand_variables(table, temp);
                 rfree(temp);
 
-                switch (var->type) {
+                switch (var->value.type) {
                   case VAR_ARRAY: {
                     long long index;
                     StrconvResult sres = ratoll(index_str, &index);
-                    if (!sres.is_err && index >= 0 && index < (long long)var->data._array.size) {
-                      va_value_t* value = array_checked_get(var->data._array, (size_t)index);
+                    if (!sres.is_err && index >= 0 && index < (long long)var->value._array.size) {
+                      va_value_t* value = array_checked_get(var->value._array, (size_t)index);
                       char* str_value = va_value_to_string(value);
                       dynstrcpy(&result, &result_size, &result_len, str_value);
                       rfree(str_value);
@@ -814,7 +812,7 @@ char* expand_variables(VariableTable* table, const char* input) {
                   case VAR_ASSOCIATIVE_ARRAY: {
                     va_value_t value;
                     size_t value_size;
-                    MapResult map_result = map_get(var->data._map, index_str, &value, &value_size);
+                    MapResult map_result = map_get(var->value._map, index_str, &value, &value_size);
                     if (!map_result.is_err) {
                       char* str_value = va_value_to_string(&value);
                       dynstrcpy(&result, &result_size, &result_len, str_value);
@@ -829,15 +827,17 @@ char* expand_variables(VariableTable* table, const char* input) {
               }
               p = array_index_end + 1;
             } else {
-              char* value = va_value_to_string(&var->data);
+              char* value = va_value_to_string(&var->value);
               dynstrcpy(&result, &result_size, &result_len, value);
               rfree(value);
             }
           } else {
-            char* value = va_value_to_string(&var->data);
+            char* value = va_value_to_string(&var->value);
             dynstrcpy(&result, &result_size, &result_len, value);
             rfree(value);
           }
+        } else {
+          dynstrcpy(&result, &result_size, &result_len, "");
         }
         rfree(var_name);
         p = (p > var_end) ? p : var_end;

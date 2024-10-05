@@ -61,9 +61,9 @@ int execute_command(Command* cmd) {
       char* key = open_bracket + 1;
       
       Variable* var = get_variable(variable_table, name);
-      if (var != NULL && var->type == VAR_ASSOCIATIVE_ARRAY) {
+      if (var != NULL && var->value.type == VAR_ASSOCIATIVE_ARRAY) {
         set_associative_array_variable(variable_table, name, key, value);
-      } else if (var != NULL && var->type == VAR_ARRAY) {
+      } else if (var != NULL && var->value.type == VAR_ARRAY) {
         long long index;
         StrconvResult result = ratoll(key, &index);
         if (result.is_err) {

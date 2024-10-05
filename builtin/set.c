@@ -36,7 +36,7 @@ int builtin_set(Command* cmd) {
     } else {
       Variable* var = get_variable(variable_table, arg);
       if (var) {
-        printf("%s=%s\n", var->name, var->value);
+        printf("%s=%s\n", var->name, var->str);
       }
     }
   }
