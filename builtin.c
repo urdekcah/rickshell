@@ -8,6 +8,7 @@ static builtin_command builtin_commands[] = {
   {"readonly", builtin_readonly},
   {"set", builtin_set},
   {"unset", builtin_unset},
+  {"declare", builtin_declare},
   {NULL, NULL}
 };
 

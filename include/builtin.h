@@ -14,6 +14,7 @@ int builtin_echo(Command *cmd);
 int builtin_readonly(Command *cmd);
 int builtin_set(Command *cmd);
 int builtin_unset(Command *cmd);
+int builtin_declare(Command *cmd);
 
 int execute_builtin(Command* cmd);
 builtin_func get_builtin_func(const char* name);

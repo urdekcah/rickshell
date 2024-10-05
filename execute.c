@@ -104,6 +104,8 @@ int execute_command(Command* cmd) {
         new_size++;
       }
     }
+    for (int i = 0; cmd->argv.data[i] != NULL; i++)
+      rfree(cmd->argv.data[i]);
     rfree(cmd->argv.data);
     cmd->argv.data = new_data;
     cmd->argv.size = new_size;

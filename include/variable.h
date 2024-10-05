@@ -57,6 +57,8 @@ void init_variables();
 VariableTable* create_variable_table();
 void free_variable_table(VariableTable* table);
 Variable* create_new_variable(VariableTable* table, const char* name, VariableType type);
+void process_string_variable(Variable* var);
+void process_exported_variable(Variable* var);
 Variable* set_variable(VariableTable* table, const char* name, const char* value, VariableType type, bool readonly);
 Variable* get_variable(VariableTable* table, const char* name);
 void unset_variable(VariableTable* table, const char* name);

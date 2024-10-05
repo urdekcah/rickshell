@@ -159,3 +159,19 @@ void trim(char* str) {
   ltrim(str);
   rtrim(str);
 }
+
+void strupper(char* str) {
+  if (str == NULL) return;
+  
+  for (char* c = str; *c; c++) {
+    *c = (char)toupper(*c);
+  }
+}
+
+void strlower(char* str) {
+  if (str == NULL) return;
+  
+  for (char* c = str; *c; c++) {
+    *c = (char)tolower(*c);
+  }
+}

@@ -11,4 +11,6 @@ char* dynstrcpy(char** dest, size_t* dest_size, size_t* dest_len, const char* sr
 void ltrim(char* str);
 void rtrim(char* str);
 void trim(char* str);
+void strupper(char* str);
+void strlower(char* str);
 #endif /* __RICKSHELL_RSTRING_H__ */

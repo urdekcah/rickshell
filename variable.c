@@ -77,6 +77,21 @@ Variable* create_new_variable(VariableTable* table, const char* name, VariableTy
   return var;
 }
 
+void process_string_variable(Variable* var) {
+  if (!var->data.type == VAR_STRING) return;
+  if (var->data._str == NULL) return;
+  if (is_variable_flag_set(&var->flags, VarFlag_Uppercase)) strupper(var->data._str);
+  else if (is_variable_flag_set(&var->flags, VarFlag_Lowercase)) strlower(var->data._str);
+}
+
+void process_exported_variable(Variable* var) {
+  if (is_variable_flag_set(&var->flags, VarFlag_Exported)) {
+    char* value = va_value_to_string(&var->data);
+    setenv(var->name, value, 1);
+    rfree(value);
+  }
+}
+
 Variable* set_variable(VariableTable* table, const char* name, const char* value, VariableType type, bool readonly) {
   Variable* var = get_variable(table, name);
   if (var == NULL) {
@@ -85,6 +100,7 @@ Variable* set_variable(VariableTable* table, const char* name, const char* value
     rfree(var->value);
     free_va_value(&var->data);
   }
+
   if (is_variable_flag_set(&var->flags, VarFlag_ReadOnly)) {
     print_error("Cannot modify readonly variable");
     return NULL;
@@ -97,6 +113,7 @@ Variable* set_variable(VariableTable* table, const char* name, const char* value
   switch (type) {
     case VAR_STRING:
       var->data._str = rstrdup(value);
+      process_string_variable(var);
       break;
     case VAR_INTEGER:
       StrconvResult result = ratoll(value, &var->data._number);
@@ -117,6 +134,7 @@ Variable* set_variable(VariableTable* table, const char* name, const char* value
       break;
   }
   if (readonly) set_variable_flag(&var->flags, VarFlag_ReadOnly);
+  process_exported_variable(var);
   return var;
 }
 
@@ -224,7 +242,7 @@ void array_set_element(VariableTable* table, const char* name, size_t index, con
 }
 
 bool do_not_expand_this_builtin(const char* name) {
-  char* do_not_expand[] = {"readonly", "set"};
+  char* do_not_expand[] = {"readonly", "set", "unset", "declare"};
   for (int i = 0; (unsigned long)i < sizeof(do_not_expand) / sizeof(char*); i++) {
     if (strcmp(name, do_not_expand[i]) == 0) {
       return true;
@@ -258,7 +276,7 @@ Variable* resolve_nameref(Variable* var) {
     return var;
   }
   
-  Variable* resolved = NULL;
+  Variable* resolved = var;
   int depth = 0;
   while (resolved != NULL && resolved->type == VAR_NAMEREF) {
     if (depth++ > 100) {
@@ -270,6 +288,7 @@ Variable* resolve_nameref(Variable* var) {
       print_error("Variable not found");
       return NULL;
     }
+    if (resolved->type != VAR_NAMEREF) break;
   }
   return resolved;
 }
@@ -438,6 +457,8 @@ void free_va_value(va_value_t* value) {
       if (value->_map != NULL)
         map_free(value->_map);
       break;
+    case VAR_NAMEREF:
+      rfree(value->_str);
     default:
       break;
   }
