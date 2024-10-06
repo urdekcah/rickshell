@@ -11,6 +11,8 @@ typedef struct {
   int is_lit;
 } string;
 
+#define _SLIT(s) ((string){.str = ("" s), .len = (sizeof(s) - 1), .is_lit = 1})
+
 string string__new(const char* s);
 size_t string__length(string s);
 string string__upper(string s);
