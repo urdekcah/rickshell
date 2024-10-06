@@ -3,6 +3,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdbool.h>
+#include <assert.h>
 #include "rstring.h"
 #include "memory.h"
 
@@ -460,6 +461,114 @@ void string__free(string s) {
   }
   s.is_lit = -997;
   rfree(s.str);
+}
+
+static void string_builder__resize(StringBuilder* sb, size_t new_capacity) {
+  assert(sb != NULL);
+  if (new_capacity < 10)
+    new_capacity = 10;
+  char* new_buffer = rrealloc(sb->buffer, new_capacity);
+  sb->buffer = new_buffer;
+  sb->capacity = new_capacity;
+}
+
+StringBuilder string_builder__new() {
+  return string_builder__with_capacity(10);
+}
+
+StringBuilder string_builder__with_capacity(size_t capacity) {
+  StringBuilder sb;
+  if (capacity < 10)
+    capacity = 10;
+  sb.buffer = rmalloc(capacity);
+  sb.len = 0;
+  sb.capacity = capacity;
+  sb.buffer[0] = '\0';
+  return sb;
+}
+
+StringBuilder string_builder__from_string(string s) {
+  StringBuilder sb = string_builder__with_capacity(s.len + 1);
+  string_builder__append(&sb, s);
+  return sb;
+}
+
+void string_builder__append(StringBuilder* sb, string s) {
+  assert(sb != NULL);
+  size_t s_len = string__length(s);
+  if (sb->len + s_len + 1 > sb->capacity)
+    string_builder__resize(sb, (sb->len + s_len + 1) * 2);
+  memcpy(sb->buffer + sb->len, s.str, s_len);
+  sb->len += s_len;
+  sb->buffer[sb->len] = '\0';
+}
+
+void string_builder__append_char(StringBuilder* sb, char c) {
+  assert(sb != NULL);
+  if (sb->len + 2 > sb->capacity)
+    string_builder__resize(sb, sb->len + 2);
+  sb->buffer[sb->len++] = c;
+  sb->buffer[sb->len] = '\0';
+}
+
+void string_builder__insert(StringBuilder* sb, size_t index, string s) {
+  assert(sb != NULL);
+  if (index > sb->len)
+    index = sb->len;
+  size_t s_len = string__length(s);
+  if (sb->len + s_len + 1 > sb->capacity)
+    string_builder__resize(sb, (sb->len + s_len + 1) * 2);
+  memmove(sb->buffer + index + s_len, sb->buffer + index, sb->len - index + 1);
+  memcpy(sb->buffer + index, s.str, s_len);
+  sb->len += s_len;
+}
+
+void string_builder__insert_char(StringBuilder* sb, size_t index, char c) {
+  assert(sb != NULL);
+  if (index > sb->len)
+    index = sb->len;
+  if (sb->len + 2 > sb->capacity)
+    string_builder__resize(sb, sb->len + 2);
+  memmove(sb->buffer + index + 1, sb->buffer + index, sb->len - index + 1);
+  sb->buffer[index] = c;
+  sb->len++;
+}
+
+void string_builder__remove3(StringBuilder* sb, size_t start, size_t end) {
+  assert(sb != NULL);
+  if (start >= sb->len) return;
+  if (end > sb->len) end = sb->len;
+  if (start >= end) return;
+  memmove(sb->buffer + start, sb->buffer + end, sb->len - end + 1);
+  sb->len -= (end - start);
+}
+
+void string_builder__remove2(StringBuilder* sb, size_t start) {
+  string_builder__remove3(sb, start, sb->len);
+}
+
+bool string_builder__equals(StringBuilder* sb, StringBuilder* other) {
+  assert(sb != NULL && other != NULL);
+  return (sb->len == other->len) && (memcmp(sb->buffer, other->buffer, sb->len) == 0);
+}
+
+string string_builder__to_string(StringBuilder* sb) {
+  assert(sb != NULL);
+  return string__create(sb->buffer, sb->len);
+}
+
+void string_builder__clear(StringBuilder* sb) {
+  assert(sb != NULL);
+  sb->len = 0;
+  memset(sb->buffer, 0, sb->capacity);
+}
+
+void string_builder__free(StringBuilder* sb) {
+  assert(sb != NULL);
+  rfree(sb->buffer);
+  sb->buffer = NULL;
+  sb->len = 0;
+  sb->capacity = 0;
 }
 
 char* remove_quotes(const char* str) {

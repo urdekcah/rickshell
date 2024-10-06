@@ -63,6 +63,27 @@ char string__min(string s);
 char string__max(string s);
 void string__free(string s);
 
+typedef struct {
+  char* buffer;
+  size_t len;
+  size_t capacity;
+} StringBuilder;
+
+StringBuilder string_builder__new();
+StringBuilder string_builder__with_capacity(size_t capacity);
+StringBuilder string_builder__from_string(string s);
+void string_builder__append(StringBuilder* sb, string s);
+void string_builder__append_char(StringBuilder* sb, char c);
+void string_builder__insert(StringBuilder* sb, size_t index, string s);
+void string_builder__insert_char(StringBuilder* sb, size_t index, char c);
+void string_builder__remove3(StringBuilder* sb, size_t start, size_t end);
+void string_builder__remove2(StringBuilder* sb, size_t start);
+#define string_builder__remove(...) GLUE(string_builder__remove, VAR_COUNT(__VA_ARGS__))(__VA_ARGS__)
+bool string_builder__equals(StringBuilder* sb, StringBuilder* other);
+string string_builder__to_string(StringBuilder* sb);
+void string_builder__clear(StringBuilder* sb);
+void string_builder__free(StringBuilder* sb);
+
 char* remove_quotes(const char* str);
 char* str_replace(const char* src, const char* old, const char* new, bool replace_all);
 bool match_pattern(const char* str, const char* pattern);
