@@ -75,5 +75,5 @@ void free_va_value(va_value_t* value);
 void vfree_va_value(void* value);
 void free_variable(Variable* var);
 void cleanup_variables();
-char* expand_variables(VariableTable* table, const char* input);
+string expand_variables(VariableTable* table, const string input);
 #endif /* __RICKSHELL_VARIABLE_H__ */

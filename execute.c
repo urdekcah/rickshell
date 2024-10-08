@@ -79,12 +79,9 @@ int execute_command(Command* cmd) {
 
   for (size_t i = 0; i < cmd->argv.size; i++) {
     string elem = *(string*)array_get(cmd->argv, i);
-    char* estr = string__to_cstr(elem);
-    char* rexpanded = expand_variables(variable_table, estr);
-    string expanded = string__new(rexpanded);
+    string expanded = expand_variables(variable_table, elem);
+    string__free(elem);
     array_index_set(&cmd->argv, i, &expanded);
-    rfree(rexpanded);
-    rfree(estr);
   }
 
   string felem = *(string*)array_get(cmd->argv, 0);
@@ -134,7 +131,6 @@ int execute_command(Command* cmd) {
       }
     }
     string__free(name);
-    string__free(value);
     return 0;
   } else if (should_not_expand) {
     StringArray new_data = create_array(cmd->argv.size);

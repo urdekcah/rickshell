@@ -545,9 +545,9 @@ static const yytype_uint8 yyrline[] =
 {
        0,    42,    42,    43,    46,    47,    50,    58,    62,    70,
       75,    81,    89,    90,    97,    98,   106,   111,   116,   121,
-     128,   129,   132,   133,   134,   135,   138,   145,   155,   164,
-     171,   180,   188,   196,   204,   212,   220,   229,   237,   245,
-     253
+     128,   129,   132,   133,   134,   135,   138,   145,   154,   163,
+     170,   179,   187,   195,   203,   211,   219,   228,   236,   244,
+     252
 };
 #endif
 
@@ -1512,47 +1512,46 @@ yyreduce:
        }
        string unquoted = string__remove_quotes((yyvsp[0].str));
        add_argument(current_command, unquoted);
-       string__free(unquoted);
        string__free((yyvsp[0].str));
    }
-#line 1519 "parser.tab.c"
+#line 1518 "parser.tab.c"
     break;
 
   case 28:
-#line 156 "parser.y"
+#line 155 "parser.y"
    {
        if (current_command == NULL) {
            current_command = create_command();
        }
        add_argument(current_command, (yyvsp[0].str));
    }
-#line 1530 "parser.tab.c"
+#line 1529 "parser.tab.c"
     break;
 
   case 29:
-#line 165 "parser.y"
+#line 164 "parser.y"
         {
             if (current_command == NULL) {
                 current_command = create_command();
             }
             add_argument(current_command, (yyvsp[0].str));
         }
-#line 1541 "parser.tab.c"
+#line 1540 "parser.tab.c"
     break;
 
   case 30:
-#line 172 "parser.y"
+#line 171 "parser.y"
         {
             if (current_command == NULL) {
                 current_command = create_command();
             }
             add_argument(current_command, (yyvsp[0].str));
         }
-#line 1552 "parser.tab.c"
+#line 1551 "parser.tab.c"
     break;
 
   case 31:
-#line 181 "parser.y"
+#line 180 "parser.y"
            {
                if (current_command == NULL) {
                    current_command = create_command();
@@ -1560,11 +1559,11 @@ yyreduce:
                add_redirect(current_command, REDIRECT_INPUT, STDIN_FILENO, (yyvsp[0].str));
                string__free((yyvsp[0].str));
            }
-#line 1564 "parser.tab.c"
+#line 1563 "parser.tab.c"
     break;
 
   case 32:
-#line 189 "parser.y"
+#line 188 "parser.y"
            {
                if (current_command == NULL) {
                    current_command = create_command();
@@ -1572,11 +1571,11 @@ yyreduce:
                add_redirect(current_command, REDIRECT_INPUT_DUP, STDIN_FILENO, (yyvsp[0].str));
                string__free((yyvsp[0].str));
            }
-#line 1576 "parser.tab.c"
+#line 1575 "parser.tab.c"
     break;
 
   case 33:
-#line 197 "parser.y"
+#line 196 "parser.y"
            {
                if (current_command == NULL) {
                    current_command = create_command();
@@ -1584,11 +1583,11 @@ yyreduce:
                add_redirect(current_command, REDIRECT_OUTPUT, STDOUT_FILENO, (yyvsp[0].str));
                string__free((yyvsp[0].str));
            }
-#line 1588 "parser.tab.c"
+#line 1587 "parser.tab.c"
     break;
 
   case 34:
-#line 205 "parser.y"
+#line 204 "parser.y"
            {
                if (current_command == NULL) {
                    current_command = create_command();
@@ -1596,11 +1595,11 @@ yyreduce:
                add_redirect(current_command, REDIRECT_OUTPUT_DUP, STDOUT_FILENO, (yyvsp[0].str));
                string__free((yyvsp[0].str));
            }
-#line 1600 "parser.tab.c"
+#line 1599 "parser.tab.c"
     break;
 
   case 35:
-#line 213 "parser.y"
+#line 212 "parser.y"
            {
                if (current_command == NULL) {
                    current_command = create_command();
@@ -1608,11 +1607,11 @@ yyreduce:
                add_redirect(current_command, REDIRECT_APPEND, STDOUT_FILENO, (yyvsp[0].str));
                string__free((yyvsp[0].str));
            }
-#line 1612 "parser.tab.c"
+#line 1611 "parser.tab.c"
     break;
 
   case 36:
-#line 221 "parser.y"
+#line 220 "parser.y"
            {
                if (current_command == NULL) {
                    current_command = create_command();
@@ -1621,11 +1620,11 @@ yyreduce:
                add_redirect(current_command, REDIRECT_OUTPUT, STDOUT_FILENO, (yyvsp[0].str));
                string__free((yyvsp[0].str));
            }
-#line 1625 "parser.tab.c"
+#line 1624 "parser.tab.c"
     break;
 
   case 37:
-#line 230 "parser.y"
+#line 229 "parser.y"
            {
                if (current_command == NULL) {
                    current_command = create_command();
@@ -1633,11 +1632,11 @@ yyreduce:
                add_redirect(current_command, REDIRECT_APPEND_DUP, STDOUT_FILENO, (yyvsp[0].str));
                string__free((yyvsp[0].str));
            }
-#line 1637 "parser.tab.c"
+#line 1636 "parser.tab.c"
     break;
 
   case 38:
-#line 238 "parser.y"
+#line 237 "parser.y"
            {
                if (current_command == NULL) {
                    current_command = create_command();
@@ -1645,11 +1644,11 @@ yyreduce:
                add_redirect(current_command, REDIRECT_INPUT, (yyvsp[-2].num), (yyvsp[0].str));
                string__free((yyvsp[0].str));
            }
-#line 1649 "parser.tab.c"
+#line 1648 "parser.tab.c"
     break;
 
   case 39:
-#line 246 "parser.y"
+#line 245 "parser.y"
            {
                if (current_command == NULL) {
                    current_command = create_command();
@@ -1657,11 +1656,11 @@ yyreduce:
                add_redirect(current_command, REDIRECT_OUTPUT, (yyvsp[-2].num), (yyvsp[0].str));
                string__free((yyvsp[0].str));
            }
-#line 1661 "parser.tab.c"
+#line 1660 "parser.tab.c"
     break;
 
   case 40:
-#line 254 "parser.y"
+#line 253 "parser.y"
            {
                if (current_command == NULL) {
                    current_command = create_command();
@@ -1669,11 +1668,11 @@ yyreduce:
                add_redirect(current_command, REDIRECT_APPEND, (yyvsp[-2].num), (yyvsp[0].str));
                string__free((yyvsp[0].str));
            }
-#line 1673 "parser.tab.c"
+#line 1672 "parser.tab.c"
     break;
 
 
-#line 1677 "parser.tab.c"
+#line 1676 "parser.tab.c"
 
       default: break;
     }
@@ -1905,7 +1904,7 @@ yyreturn:
 #endif
   return yyresult;
 }
-#line 263 "parser.y"
+#line 262 "parser.y"
 
 
 void yyerror(const char* s) {
