@@ -613,13 +613,8 @@ string expand_variables(VariableTable* table, const string input) {
             if (var) {
               string value = string__from(var->str);
               bool convert_all = (pattern.str[0] == '^' && pattern.len > 1 && pattern.str[1] == '^');
-        
-              if (convert_all) {
-                string temp = string__substring(pattern, 2);
-                string__free(pattern);
-                pattern = temp;
-              } else if (pattern.str[0] == '^') {
-                string temp = string__substring(pattern, 1);
+              {
+                string temp = string__substring(pattern, (convert_all) ? 2 : 1);
                 string__free(pattern);
                 pattern = temp;
               }
@@ -628,11 +623,13 @@ string expand_variables(VariableTable* table, const string input) {
                 for (size_t i = 0; i < value.len; i++)
                   if (convert_all || (!convert_all && i == 0)) value.str[i] = (char)toupper(value.str[i]);
               } else {
+                bool first_found = false;
                 for (size_t i = 0; i < value.len; i++) {
                   string temp = string__substring(value, (ssize_t)i, (ssize_t)i+1);
                   if (string__contains(pattern, temp)) {
-                    if (convert_all || i == 0) {
+                    if (convert_all || (!convert_all && !first_found)) {
                       value.str[i] = (char)toupper(value.str[i]);
+                      if (!first_found) first_found = true;
                     }
                   }
                   string__free(temp);
@@ -644,20 +641,38 @@ string expand_variables(VariableTable* table, const string input) {
             string__free(pattern);
           } else if (comma_pos != -1) {
             string name = string__substring(var_name, 0, comma_pos);
+            string pattern = string__substring(var_name, comma_pos);
             Variable* var = get_variable(table, name);
             string__free(name);
             if (var) {
               string value = string__from(var->str);
-              if (var_name.str[comma_pos + 1] == ',') {
-                string temp = string__lower(value);
-                string__free(value);
-                value = temp;
+              bool convert_all = (pattern.str[0] == ',' && pattern.len > 1 && pattern.str[1] == ',');
+              {
+                string temp = string__substring(pattern, (convert_all) ? 2 : 1);
+                string__free(pattern);
+                pattern = temp;
+              }
+        
+              if (pattern.len == 0) {
+                for (size_t i = 0; i < value.len; i++)
+                  if (convert_all || (!convert_all && i == 0)) value.str[i] = (char)tolower(value.str[i]);
               } else {
-                value.str[0] = (char)tolower(value.str[0]);
+                bool first_found = false;
+                for (size_t i = 0; i < value.len; i++) {
+                  string temp = string__substring(value, (ssize_t)i, (ssize_t)i+1);
+                  if (string__contains(pattern, temp)) {
+                    if (convert_all || (!convert_all && !first_found)) {
+                      value.str[i] = (char)tolower(value.str[i]);
+                      if (!first_found) first_found = true;
+                    }
+                  }
+                  string__free(temp);
+                }
               }
               string_builder__append(&sb, value);
               string__free(value);
             }
+            string__free(pattern);
           } else if (colon_pos != -1 && !(var_name.str[colon_pos + 1] == '?' || var_name.str[colon_pos + 1] == '-' || var_name.str[colon_pos + 1] == '=' || var_name.str[colon_pos + 1] == '+')) {
             string name = string__substring(var_name, 0, colon_pos);
             string offset_str = string__substring(var_name, colon_pos + 1);
