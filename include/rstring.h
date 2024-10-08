@@ -2,6 +2,7 @@
 #define __RICKSHELL_RSTRING_H__
 #include <stdbool.h>
 #include <stdarg.h>
+#include <unistd.h>
 #include "args.h"
 #include "array.h"
 
@@ -12,16 +13,19 @@ typedef struct {
 } string;
 
 #define _SLIT(s) ((string){.str = ("" s), .len = (sizeof(s) - 1), .is_lit = 1})
+#define _SLIT0 ((string){.str = "", .len = 0, .is_lit = 1})
 
 string string__new(const char* s);
+string string__from(string s);
+char* string__to_cstr(string s);
 size_t string__length(string s);
 string string__upper(string s);
 string string__lower(string s);
 string string__trim(string s);
 string string__ltrim(string s);
 string string__rtrim(string s);
-string string__substring2(string s, size_t start);
-string string__substring3(string s, size_t start, size_t end);
+string string__substring2(string s, ssize_t start);
+string string__substring3(string s, ssize_t start, ssize_t end);
 #define string__substring(...) GLUE(string__substring, VAR_COUNT(__VA_ARGS__))(__VA_ARGS__)
 string string__replace(string s, string old, string new);
 string string__replace_all(string s, string old, string new);
@@ -30,10 +34,10 @@ string string__concat_many(int count, ...);
 bool string__contains(string s, string value);
 bool string__startswith(string s, string prefix);
 bool string__endswith(string s, string suffix);
-size_t string__indexof(string s, string substr);
-size_t string__lastindexof(string s, string substr);
-size_t string__indexof_any(string s, string substrs[]);
-size_t string__lastindexof_any(string s, string substrs[]);
+ssize_t string__indexof(string s, string substr);
+ssize_t string__lastindexof(string s, string substr);
+ssize_t string__indexof_any(string s, string substrs[]);
+ssize_t string__lastindexof_any(string s, string substrs[]);
 string string__remove2(string s, size_t start);
 string string__remove3(string s, size_t start, size_t end);
 #define string__remove(...) GLUE(string__remove, VAR_COUNT(__VA_ARGS__))(__VA_ARGS__)
@@ -52,6 +56,7 @@ string string__capitalize(string s);
 string string__swapcase(string s);
 string string__remove_prefix(string s, string prefix, bool is_longest_match);
 string string__remove_suffix(string s, string suffix, bool greedy);
+string string__remove_quotes(string s);
 bool string__isdigit(string s);
 bool string__isdecimal(string s);
 bool string__isalpha(string s);
@@ -63,6 +68,9 @@ bool string__istitle(string s);
 bool string__isidentifier(string s);
 char string__min(string s);
 char string__max(string s);
+void rstring__upper(string s);
+void rstring__lower(string s);
+void rstring__trim(string s);
 void string__free(string s);
 
 typedef struct {
@@ -75,8 +83,10 @@ StringBuilder string_builder__new();
 StringBuilder string_builder__with_capacity(size_t capacity);
 StringBuilder string_builder__from_string(string s);
 void string_builder__append(StringBuilder* sb, string s);
+void string_builder__append_cstr(StringBuilder* sb, const char* s);
 void string_builder__append_char(StringBuilder* sb, char c);
 void string_builder__insert(StringBuilder* sb, size_t index, string s);
+void string_builder__insert_cstr(StringBuilder* sb, size_t index, const char* s);
 void string_builder__insert_char(StringBuilder* sb, size_t index, char c);
 void string_builder__remove3(StringBuilder* sb, size_t start, size_t end);
 void string_builder__remove2(StringBuilder* sb, size_t start);

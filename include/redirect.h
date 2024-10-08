@@ -15,7 +15,7 @@ enum RedirectType {
 struct Redirect {
   RedirectType type;
   int fd;
-  char* target;
+  string target;
   bool is_fd;
 };
 

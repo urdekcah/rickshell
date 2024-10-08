@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stddef.h>
+#include <unistd.h>
 #include <ctype.h>
 #include <stdbool.h>
 #include <assert.h>
@@ -10,6 +12,7 @@
 string string__create(const char* s, size_t len) {
   string str;
   str.str = rstrdup(s);
+  str.str[len] = '\0';
   str.len = len;
   str.is_lit = 0;
   return str;
@@ -17,6 +20,17 @@ string string__create(const char* s, size_t len) {
 
 string string__new(const char* s) {
   return string__create(s, strlen(s));
+}
+
+string string__from(string s) {
+  return string__create(s.str, s.len);
+}
+
+char* string__to_cstr(string s) {
+  char* cstr = (char*)rmalloc(s.len + 1);
+  memcpy(cstr, s.str, s.len);
+  cstr[s.len] = '\0';
+  return cstr;
 }
 
 size_t string__length(string s) {
@@ -56,37 +70,37 @@ string string__rtrim(string s) {
   return string__create(s.str, end);
 }
 
-string string__substring2(string s, size_t start) {
-  if (start >= s.len) return string__create("", 0);
-  return string__create(s.str + start, s.len - start);
+string string__substring2(string s, ssize_t start) {
+  if (start >= (ssize_t)s.len) return string__create("", 0);
+  return string__create(s.str + start, s.len - (size_t)start);
 }
 
-string string__substring3(string s, size_t start, size_t end) {
-  if (start >= s.len) return string__create("", 0);
-  if (end > s.len) end = s.len;
+string string__substring3(string s, ssize_t start, ssize_t end) {
+  if (start >= (ssize_t)s.len) return string__create("", 0);
+  if (end > (ssize_t)s.len) end = (ssize_t)s.len;
   if (start > end) start = end;
-  return string__create(s.str + start, end - start);
+  return string__create(s.str + start, (size_t)(end - start));
 }
 
 string string__replace(string s, string old, string new) {
-  size_t pos = string__indexof(s, old);
-  if (pos == (size_t)-1) return string__create(s.str, s.len);
+  ssize_t pos = string__indexof(s, old);
+  if (pos == -1) return string__create(s.str, s.len);
     
   size_t result_len = s.len - old.len + new.len;
   char* result = (char*)rmalloc(result_len + 1);
 
-  memcpy(result, s.str, pos);
+  memcpy(result, s.str, (size_t)pos);
   memcpy(result + pos, new.str, new.len);
-  memcpy(result + pos + new.len, s.str + pos + old.len, s.len - pos - old.len);
+  memcpy(result + pos + new.len, s.str + pos + old.len, s.len - (size_t)pos - old.len);
   result[result_len] = '\0';
     
   return (string){.str = result, .len = result_len, .is_lit = 0};
 }
 
 string string__replace_all(string s, string old, string new) {
-  size_t pos = 0;
+  ssize_t pos = 0;
   string result = string__create(s.str, s.len);
-  while ((pos = string__indexof(result, old)) != (size_t)-1) {
+  while ((pos = string__indexof(result, old)) != -1) {
     string temp = string__replace(result, old, new);
     string__free(result);
     result = temp;
@@ -133,7 +147,7 @@ string string__concat_many(int count, ...) {
 }
 
 bool string__contains(string s, string value) {
-  return string__indexof(s, value) != (size_t)-1;
+  return string__indexof(s, value) != -1;
 }
 
 bool string__startswith(string s, string prefix) {
@@ -146,39 +160,39 @@ bool string__endswith(string s, string suffix) {
   return memcmp(s.str + s.len - suffix.len, suffix.str, suffix.len) == 0;
 }
 
-size_t string__indexof(string s, string substr) {
-  if (substr.len > s.len) return (size_t)-1;
+ssize_t string__indexof(string s, string substr) {
+  if (substr.len > s.len) return -1;
   for (size_t i = 0; i <= s.len - substr.len; i++) {
     if (memcmp(s.str + i, substr.str, substr.len) == 0)
-      return i;
+      return (ssize_t)i;
   }
-  return (size_t)-1;
+  return -1;
 }
 
-size_t string__lastindexof(string s, string substr) {
-  if (substr.len > s.len) return (size_t)-1;
+ssize_t string__lastindexof(string s, string substr) {
+  if (substr.len > s.len) return -1;
   for (size_t i = s.len - substr.len; i != (size_t)-1; i--) {
     if (memcmp(s.str + i, substr.str, substr.len) == 0)
-      return i;
+      return (ssize_t)i;
   }
-  return (size_t)-1;
+  return -1;
 }
 
-size_t string__indexof_any(string s, string substrs[]) {
-  size_t min_index = (size_t)-1;
+ssize_t string__indexof_any(string s, string substrs[]) {
+  ssize_t min_index = -1;
   for (size_t i = 0; substrs[i].str != NULL; i++) {
-    size_t index = string__indexof(s, substrs[i]);
-    if (index != (size_t)-1 && index < min_index)
+    ssize_t index = string__indexof(s, substrs[i]);
+    if (index != (ssize_t)-1 && index < min_index)
       min_index = index;
   }
   return min_index;
 }
 
-size_t string__lastindexof_any(string s, string substrs[]) {
-  size_t max_index = (size_t)-1;
-  for (size_t i = 0; substrs[i].str != NULL; i++) {
-    size_t index = string__lastindexof(s, substrs[i]);
-    if (index != (size_t)-1 && index > max_index)
+ssize_t string__lastindexof_any(string s, string substrs[]) {
+  ssize_t max_index = -1;
+  for (ssize_t i = 0; substrs[i].str != NULL; i++) {
+    ssize_t index = string__lastindexof(s, substrs[i]);
+    if (index != -1 && index > max_index)
       max_index = index;
   }
   return max_index;
@@ -202,17 +216,17 @@ string string__remove3(string s, size_t start, size_t end) {
 }
 
 StringArray string__split(string s, string delim) {
-  size_t pos = 0;
-  size_t prev = 0;
+  ssize_t pos = 0;
+  ssize_t prev = 0;
   StringArray result = create_array(sizeof(string));
     
-  while ((pos = string__indexof(string__substring(s, prev), delim)) != (size_t)-1) {
+  while ((pos = string__indexof(string__substring(s, prev), delim)) != -1) {
     string part = string__substring(s, prev, prev + pos);
     array_push(&result, &part);
-    prev += pos + delim.len;
+    prev += pos + (ssize_t)delim.len;
   }
     
-  if (prev < s.len) {
+  if (prev < (ssize_t)s.len) {
     string part = string__substring(s, prev);
     array_push(&result, &part);
   }
@@ -278,7 +292,7 @@ string string__rjust(string s, size_t width, char pad) {
 }
 
 bool string__is_null_or_empty(string s) {
-  return s.str == NULL || s.len == 0;
+  return s.str == NULL || s.len == 0 || (s.len == 1 && s.str[0] == '\0');
 }
 
 bool string__is_null_or_whitespace(string s) {
@@ -343,10 +357,10 @@ string string__swapcase(string s) {
 string string__remove_prefix(string s, string prefix, bool is_longest_match) {
   if (is_longest_match) {
     if (string__startswith(s, prefix))
-      return string__substring(s, prefix.len);
+      return string__substring(s, (ssize_t)prefix.len);
   } else {
     if (s.len >= prefix.len && memcmp(s.str, prefix.str, prefix.len) == 0)
-      return string__substring(s, prefix.len);
+      return string__substring(s, (ssize_t)prefix.len);
   }
   return string__create(s.str, s.len);
 }
@@ -354,12 +368,19 @@ string string__remove_prefix(string s, string prefix, bool is_longest_match) {
 string string__remove_suffix(string s, string suffix, bool greedy) {
   if (greedy) {
     if (string__endswith(s, suffix))
-      return string__substring(s, 0, s.len - suffix.len);
+      return string__substring(s, 0, (ssize_t)(s.len - suffix.len));
   } else {
     if (s.len >= suffix.len && memcmp(s.str + s.len - suffix.len, suffix.str, suffix.len) == 0)
-      return string__substring(s, 0, s.len - suffix.len);
+      return string__substring(s, 0, (ssize_t)(s.len - suffix.len));
   }
   return string__create(s.str, s.len);
+}
+
+string string__remove_quotes(string s) {
+  if (string__length(s) < 2) return s;
+  if ((s.str[0] == '"' && s.str[s.len - 1] == '"') || (s.str[0] == '\'' && s.str[s.len - 1] == '\''))
+    return string__substring(s, 1, (ssize_t)(s.len - 1));
+  return s;
 }
 
 bool string__isdigit(string s) {
@@ -453,6 +474,25 @@ char string__max(string s) {
   return max_char;
 }
 
+void rstring__upper(string s) {
+  for (size_t i = 0; i < s.len; i++)
+    s.str[i] = (char)toupper(s.str[i]);
+}
+
+void rstring__lower(string s) {
+  for (size_t i = 0; i < s.len; i++)
+    s.str[i] = (char)tolower(s.str[i]);
+}
+
+void rstring__trim(string s) {
+  size_t start = 0, end = s.len;
+  while (start < s.len && isspace(s.str[start])) start++;
+  while (end > start && isspace(s.str[end - 1])) end--;
+  memmove(s.str, s.str + start, end - start);
+  s.len = end - start;
+  s.str[s.len] = '\0';
+}
+
 void string__free(string s) {
   if (s.is_lit) return;
   if (s.is_lit == -997) {
@@ -503,6 +543,16 @@ void string_builder__append(StringBuilder* sb, string s) {
   sb->buffer[sb->len] = '\0';
 }
 
+void string_builder__append_cstr(StringBuilder* sb, const char* s) {
+  assert(sb != NULL);
+  size_t s_len = strlen(s);
+  if (sb->len + s_len + 1 > sb->capacity)
+    string_builder__resize(sb, (sb->len + s_len + 1) * 2);
+  memcpy(sb->buffer + sb->len, s, s_len);
+  sb->len += s_len;
+  sb->buffer[sb->len] = '\0';
+}
+
 void string_builder__append_char(StringBuilder* sb, char c) {
   assert(sb != NULL);
   if (sb->len + 2 > sb->capacity)
@@ -520,6 +570,18 @@ void string_builder__insert(StringBuilder* sb, size_t index, string s) {
     string_builder__resize(sb, (sb->len + s_len + 1) * 2);
   memmove(sb->buffer + index + s_len, sb->buffer + index, sb->len - index + 1);
   memcpy(sb->buffer + index, s.str, s_len);
+  sb->len += s_len;
+}
+
+void string_builder__insert_cstr(StringBuilder* sb, size_t index, const char* s) {
+  assert(sb != NULL);
+  if (index > sb->len)
+    index = sb->len;
+  size_t s_len = strlen(s);
+  if (sb->len + s_len + 1 > sb->capacity)
+    string_builder__resize(sb, (sb->len + s_len + 1) * 2);
+  memmove(sb->buffer + index + s_len, sb->buffer + index, sb->len - index + 1);
+  memcpy(sb->buffer + index, s, s_len);
   sb->len += s_len;
 }
 

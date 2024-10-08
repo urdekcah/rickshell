@@ -101,61 +101,49 @@ static void print_prompt(void) {
   rfree(cwd);
 }
 
-static char* get_input(size_t* size) {
-  char* buffer = rmalloc(INITIAL_BUFFER_SIZE);
-  if (!buffer) {
-    perror("Error allocating memory");
-    return NULL;
-  }
-
-  size_t buffer_size = INITIAL_BUFFER_SIZE;
-  size_t input_length = 0;
-
+static string get_input() {
+  StringBuilder sb = string_builder__new();
+  char buffer[INITIAL_BUFFER_SIZE];
+    
   while (1) {
-    size_t remaining = buffer_size - input_length;
-    if (!fgets(buffer + input_length, (int)remaining, stdin)) {
+    if (!fgets(buffer, sizeof(buffer), stdin)) {
       if (feof(stdin)) {
-        if (input_length == 0) {
-          rfree(buffer);
-          return NULL;
+        if (sb.len == 0) {
+          string_builder__free(&sb);
+          return _SLIT0;
         }
         break;
       } else {
         perror("Error reading input");
-        rfree(buffer);
-        return NULL;
+        string_builder__free(&sb);
+        return _SLIT0;
       }
     }
+          
+    size_t len = strlen(buffer);
+    if (len > 0 && buffer[len - 1] == '\n') {
+      buffer[len - 1] = '\0';
+      len--;
+    }
 
-    input_length += strlen(buffer + input_length);
-    if (input_length > 0 && buffer[input_length - 1] == '\n') {
-      buffer[--input_length] = '\0';
+    string tv = string__new(buffer);
+    string_builder__append(&sb, tv);
+    string__free(tv);
+        
+    if (len < sizeof(buffer) - 1) {
       break;
     }
-
-    if (input_length == buffer_size - 1) {
-      if (buffer_size >= MAX_BUFFER_SIZE) {
-        fprintf(stderr, "Error: Input too large\n");
-        rfree(buffer);
-        return NULL;
-      }
-      size_t new_size = (size_t)(buffer_size * BUFFER_GROWTH_FACTOR);
-      if (new_size > MAX_BUFFER_SIZE) {
-        new_size = MAX_BUFFER_SIZE;
-      }
-      char* new_buffer = rrealloc(buffer, new_size);
-      if (!new_buffer) {
-        perror("Error reallocating memory");
-        rfree(buffer);
-        return NULL;
-      }
-      buffer = new_buffer;
-      buffer_size = new_size;
+        
+    if (sb.len >= MAX_BUFFER_SIZE) {
+      fprintf(stderr, "Error: Input too large\n");
+      string_builder__free(&sb);
+      return _SLIT0;
     }
   }
-
-  *size = input_length;
-  return buffer;
+  
+  string result = string_builder__to_string(&sb);
+  string_builder__free(&sb);
+  return result;
 }
 
 static int setup_signal_handler(void) {
@@ -170,13 +158,13 @@ static int setup_signal_handler(void) {
   return 0;
 }
 
-static int process_command(const char* input) {
-  if (strlen(input) > MAX_COMMAND_LENGTH) {
+static int process_command(const string input) {
+  if (string__length(input) > MAX_COMMAND_LENGTH) {
     fprintf(stderr, "Error: Command too long\n");
     return -1;
   }
 
-  if (strcmp(input, "exit") == 0) return 1;
+  if (string__compare(input, _SLIT("exit")) == 0) return 1;
   parse_and_execute(input);
   return 0;
 }
@@ -208,10 +196,9 @@ int main(void) {
     print_job_status();
     print_prompt();
 
-    size_t input_size;
-    char* input = get_input(&input_size);
+    string input = get_input();
 
-    if (!input) {
+    if (string__is_null_or_empty(input)) {
       if (feof(stdin)) {
         printf("\nEnd of input. Exiting...\n");
         break;
@@ -219,13 +206,13 @@ int main(void) {
       continue;
     }
 
-    if (input_size == 0) {
-      rfree(input);
+    if (input.len == 0) {
+      string__free(input);
       continue;
     }
 
     int result = process_command(input);
-    rfree(input);
+    string__free(input);
 
     if (result == 1) {
       printf("Exiting...\n");

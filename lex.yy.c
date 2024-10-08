@@ -486,12 +486,13 @@ char *yytext;
 #include "redirect.h"
 #include "pipeline.h"
 #include "parser.tab.h"
+#include "rstring.h"
 
 #define YY_NO_INPUT
 #define YY_NO_UNPUT
 
-#line 493 "lex.yy.c"
 #line 494 "lex.yy.c"
+#line 495 "lex.yy.c"
 
 #define INITIAL 0
 
@@ -708,9 +709,9 @@ YY_DECL
 		}
 
 	{
-#line 19 "lexer.l"
+#line 20 "lexer.l"
 
-#line 713 "lex.yy.c"
+#line 714 "lex.yy.c"
 
 	while ( /*CONSTCOND*/1 )		/* loops until end-of-file is reached */
 		{
@@ -769,157 +770,157 @@ do_action:	/* This label is used only to access EOF actions. */
 
 case 1:
 YY_RULE_SETUP
-#line 20 "lexer.l"
+#line 21 "lexer.l"
 ; // Ignore whitespace
 	YY_BREAK
 case 2:
 /* rule 2 can match eol */
 YY_RULE_SETUP
-#line 21 "lexer.l"
-{ yylval.str = strdup(yytext); return QUOTED_STRING; }
+#line 22 "lexer.l"
+{ yylval.str = string__new(yytext); return QUOTED_STRING; }
 	YY_BREAK
 case 3:
 YY_RULE_SETUP
-#line 22 "lexer.l"
+#line 23 "lexer.l"
 { return PIPE; }
 	YY_BREAK
 case 4:
 YY_RULE_SETUP
-#line 23 "lexer.l"
+#line 24 "lexer.l"
 { return LESS; }
 	YY_BREAK
 case 5:
 YY_RULE_SETUP
-#line 24 "lexer.l"
+#line 25 "lexer.l"
 { return GREATER; }
 	YY_BREAK
 case 6:
 YY_RULE_SETUP
-#line 25 "lexer.l"
+#line 26 "lexer.l"
 { return DGREATER; }
 	YY_BREAK
 case 7:
 YY_RULE_SETUP
-#line 26 "lexer.l"
+#line 27 "lexer.l"
 { return LESSAND; }
 	YY_BREAK
 case 8:
 YY_RULE_SETUP
-#line 27 "lexer.l"
+#line 28 "lexer.l"
 { return GREATAND; }
 	YY_BREAK
 case 9:
 YY_RULE_SETUP
-#line 28 "lexer.l"
+#line 29 "lexer.l"
 { return LESSGREAT; }
 	YY_BREAK
 case 10:
 YY_RULE_SETUP
-#line 29 "lexer.l"
+#line 30 "lexer.l"
 { return DGREATAND; }
 	YY_BREAK
 case 11:
 YY_RULE_SETUP
-#line 30 "lexer.l"
+#line 31 "lexer.l"
 { return AMPERSAND; }
 	YY_BREAK
 case 12:
 YY_RULE_SETUP
-#line 31 "lexer.l"
+#line 32 "lexer.l"
 { return SEMICOLON; }
 	YY_BREAK
 case 13:
 YY_RULE_SETUP
-#line 32 "lexer.l"
+#line 33 "lexer.l"
 { return AND; }
 	YY_BREAK
 case 14:
 YY_RULE_SETUP
-#line 33 "lexer.l"
+#line 34 "lexer.l"
 { return OR; }
 	YY_BREAK
 case 15:
 /* rule 15 can match eol */
 YY_RULE_SETUP
-#line 34 "lexer.l"
+#line 35 "lexer.l"
 { return NEWLINE; }
 	YY_BREAK
 case 16:
 YY_RULE_SETUP
-#line 35 "lexer.l"
+#line 36 "lexer.l"
 { yylval.num = atoi(yytext); return IO_NUMBER; }
 	YY_BREAK
 case 17:
 YY_RULE_SETUP
-#line 36 "lexer.l"
+#line 37 "lexer.l"
 { yylval.num = atoi(yytext); return IO_NUMBER; }
 	YY_BREAK
 case 18:
 YY_RULE_SETUP
-#line 37 "lexer.l"
+#line 38 "lexer.l"
 { yylval.num = atoi(yytext); return IO_NUMBER; }
 	YY_BREAK
 case 19:
 YY_RULE_SETUP
-#line 38 "lexer.l"
+#line 39 "lexer.l"
 { return '('; }
 	YY_BREAK
 case 20:
 YY_RULE_SETUP
-#line 39 "lexer.l"
+#line 40 "lexer.l"
 { return ')'; }
 	YY_BREAK
 case 21:
 /* rule 21 can match eol */
 YY_RULE_SETUP
-#line 40 "lexer.l"
-{ yylval.str = strdup(yytext); return WORD; }
+#line 41 "lexer.l"
+{ yylval.str = string__new(yytext); return WORD; }
 	YY_BREAK
 case 22:
 /* rule 22 can match eol */
 YY_RULE_SETUP
-#line 41 "lexer.l"
-{ yylval.str = strdup(yytext); return WORD; }
+#line 42 "lexer.l"
+{ yylval.str = string__new(yytext); return WORD; }
 	YY_BREAK
 case 23:
 /* rule 23 can match eol */
 YY_RULE_SETUP
-#line 42 "lexer.l"
-{ yylval.str = strdup(yytext); return WORD; }
+#line 43 "lexer.l"
+{ yylval.str = string__new(yytext); return WORD; }
 	YY_BREAK
 case 24:
 /* rule 24 can match eol */
 YY_RULE_SETUP
-#line 43 "lexer.l"
-{ yylval.str = strdup(yytext); return PARAM_EXPANSION; }
+#line 44 "lexer.l"
+{ yylval.str = string__new(yytext); return PARAM_EXPANSION; }
 	YY_BREAK
 case 25:
 YY_RULE_SETUP
-#line 44 "lexer.l"
-{ yylval.str = strdup(yytext); return PARAM_EXPANSION; }
+#line 45 "lexer.l"
+{ yylval.str = string__new(yytext); return PARAM_EXPANSION; }
 	YY_BREAK
 case 26:
 YY_RULE_SETUP
-#line 45 "lexer.l"
-{ yylval.str = strdup(yytext); return PARAM_EXPANSION; }
+#line 46 "lexer.l"
+{ yylval.str = string__new(yytext); return PARAM_EXPANSION; }
 	YY_BREAK
 case 27:
 /* rule 27 can match eol */
 YY_RULE_SETUP
-#line 46 "lexer.l"
-{ yylval.str = strdup(yytext); return PARAM_EXPANSION; }
+#line 47 "lexer.l"
+{ yylval.str = string__new(yytext); return PARAM_EXPANSION; }
 	YY_BREAK
 case 28:
 YY_RULE_SETUP
-#line 47 "lexer.l"
-{ yylval.str = strdup(yytext); return WORD; }
+#line 48 "lexer.l"
+{ yylval.str = string__new(yytext); return WORD; }
 	YY_BREAK
 case 29:
 YY_RULE_SETUP
-#line 49 "lexer.l"
+#line 50 "lexer.l"
 ECHO;
 	YY_BREAK
-#line 922 "lex.yy.c"
+#line 923 "lex.yy.c"
 case YY_STATE_EOF(INITIAL):
 	yyterminate();
 
@@ -1920,7 +1921,7 @@ void yyfree (void * ptr )
 
 #define YYTABLES_NAME "yytables"
 
-#line 49 "lexer.l"
+#line 50 "lexer.l"
 
 
 #undef YY_NO_INPUT

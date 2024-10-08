@@ -6,40 +6,38 @@
 #include "builtin.h"
 #include "expr.h"
 #include "error.h"
+#include "rstring.h"
+#include "array.h"
+#include "strconv.h"
 
 extern VariableTable* variable_table;
 
 int builtin_set(Command* cmd) {
-  if (cmd == NULL || cmd->argv.data == NULL) {
+  if (cmd == NULL || cmd->argv.size == 0) {
     return -1;
   }
 
   for (size_t i = 1; i < cmd->argv.size; i++) {
-    char* arg = cmd->argv.data[i];
-    char* equals_sign = strchr(arg, '=');
-    if (equals_sign != NULL) {
-      *equals_sign = '\0';
-      const char* name = arg;
-      const char* value = equals_sign + 1;
-
-      if (*value == '\0' && i + 1 < cmd->argv.size) {
-        value = cmd->argv.data[++i];
-      }
-
+    string elem = *(string*)array_checked_get(cmd->argv, i);
+    ssize_t equals_pos = string__indexof(elem, _SLIT("="));
+    if (equals_pos != -1) {
+      string name = string__substring(elem, 0, equals_pos);
+      string value = string__substring(elem, equals_pos + 1);
       Variable* var = set_variable(variable_table, name, value, parse_variable_type(value), false);
       if (var == NULL) {
-        print_error("Failed to set variable");
+        print_error(_SLIT("Failed to set variable"));
         return 0;
       }
-
-      *equals_sign = '=';
+      string__free(name);
+      string__free(value);
     } else {
-      Variable* var = get_variable(variable_table, arg);
+      Variable* var = get_variable(variable_table, elem);
       if (var) {
-        printf("%s=%s\n", var->name, var->str);
+        string value = va_value_to_string(&var->value);
+        printf("%s=%s\n", var->name.str, value.str);
+        string__free(value);
       }
     }
   }
-
   return 0;
 }

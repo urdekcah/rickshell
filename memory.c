@@ -153,7 +153,7 @@ char *rstrdup(const char *src) {
   size_t len = strlen(src) + 1;
   char* dest = rmalloc(len);
   if (dest == NULL) {
-    print_error("Memory allocation failed");
+    print_error(_SLIT("Memory allocation failed"));
     return NULL;
   }
   return memcpy(dest, src, len);
@@ -164,7 +164,7 @@ char* rstrcat(char* dest, const char* src, size_t dest_size) {
   size_t src_len = strnlen(src, dest_size - dest_len);
     
   if (dest_len + src_len >= dest_size) {
-    print_error("String concatenation would result in buffer overflow");
+    print_error(_SLIT("String concatenation would result in buffer overflow"));
     return NULL;
   }
     

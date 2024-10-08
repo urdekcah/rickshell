@@ -24,39 +24,30 @@ extern CommandList* command_list;
 Command* create_command(void) {
   Command* cmd = rmalloc(sizeof(Command));
   if (cmd == NULL) {
-    print_error("Command creation failed");
+    print_error(_SLIT("Command creation failed"));
     exit(EXIT_FAILURE);
   }
   memset(cmd, 0, sizeof(Command));
   cmd->redirects.data = rcalloc(1, sizeof(Redirect));
   cmd->redirects.capacity = 1;
-  cmd->argv.data = rcalloc(INITIAL_ARGV_SIZE, sizeof(char*));
-  cmd->argv.capacity = INITIAL_ARGV_SIZE;
+  cmd->argv = create_array(sizeof(string));
   return cmd;
 }
 
-bool add_argument(Command* cmd, const char* arg) {
-  if (cmd == NULL || arg == NULL) return false;
+bool add_argument(Command* cmd, const string arg) {
+  if (cmd == NULL || string__is_null_or_empty(arg)) return false;
   
   if (cmd->argv.size >= INT_MAX - 1) {
-    print_error("Maximum number of arguments exceeded");
+    print_error(_SLIT("Maximum number of arguments exceeded"));
     return false;
   }
-  
-  if (cmd->argv.size >= cmd->argv.capacity - 1) {
-    size_t new_capacity = cmd->argv.capacity * 2;
-    cmd->argv.data = rrealloc(cmd->argv.data, new_capacity * sizeof(char*));
-    cmd->argv.capacity = new_capacity;
-  }
-  
-  cmd->argv.data[cmd->argv.size] = rstrdup(arg);
-  cmd->argv.size++;
-  cmd->argv.data[cmd->argv.size] = NULL;
+
+  array_push(&cmd->argv, (string*)&arg);
   return true;
 }
 
-bool add_redirect(Command* cmd, RedirectType type, int fd, const char* target) {
-  if (cmd == NULL || target == NULL || cmd->redirects.size >= MAX_REDIRECTS) return false;
+bool add_redirect(Command* cmd, RedirectType type, int fd, const string target) {
+  if (cmd == NULL || string__is_null_or_empty(target) || cmd->redirects.size >= MAX_REDIRECTS) return false;
   
   if (cmd->redirects.size >= cmd->redirects.capacity) {
     size_t new_capacity = cmd->redirects.capacity * 2;
@@ -67,8 +58,8 @@ bool add_redirect(Command* cmd, RedirectType type, int fd, const char* target) {
   Redirect* redirect = &cmd->redirects.data[cmd->redirects.size];
   redirect->type = type;
   redirect->fd = fd;
-  redirect->target = rstrdup(target);
-  redirect->is_fd = (target[0] >= '0' && target[0] <= '9' && target[1] == '\0');
+  redirect->target = string__from(target);
+  redirect->is_fd = (target.str[0] >= '0' && target.str[0] <= '9' && target.str[1] == '\0');
   
   cmd->redirects.size++;
   return true;
@@ -88,7 +79,7 @@ bool add_pipeline(Command* cmd, Command* next) {
 CommandList* create_command_list(void) {
   CommandList* list = rcalloc(1, sizeof(CommandList));
   if (list == NULL) {
-    print_error("Command list creation failed");
+    print_error(_SLIT("Command list creation failed"));
     exit(EXIT_FAILURE);
   }
   return list;
@@ -125,13 +116,11 @@ bool append_command_list(CommandList* dest, CommandList* src) {
 
 void free_command(Command* cmd) {
   if (cmd == NULL) return;
-  for (size_t i = 0; i < cmd->argv.size; i++) {
-    rfree(cmd->argv.data[i]);
-  }
-  rfree(cmd->argv.data);
-  for (size_t i = 0; i < cmd->redirects.size; i++) {
-    rfree(cmd->redirects.data[i].target);
-  }
+  for (size_t i = 0; i < cmd->argv.size; i++)
+    string__free(*(string*)array_checked_get(cmd->argv, i));
+  array_free(&cmd->argv);
+  for (size_t i = 0; i < cmd->redirects.size; i++)
+    string__free(cmd->redirects.data[i].target);
   rfree(cmd->redirects.data);
   memset(cmd, 0, sizeof(Command));
   rfree(cmd);

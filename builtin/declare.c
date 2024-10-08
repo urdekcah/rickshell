@@ -6,6 +6,8 @@
 #include "builtin.h"
 #include "variable.h"
 #include "memory.h"
+#include "rstring.h"
+#include "array.h"
 
 extern VariableTable* variable_table;
 
@@ -21,10 +23,11 @@ int builtin_declare(Command *cmd) {
   bool unset_mode = false;
 
   for (size_t i = 1; i < cmd->argv.size; i++) {
-    if (cmd->argv.data[i][0] == '-' || cmd->argv.data[i][0] == '+') {
-      unset_mode = (cmd->argv.data[i][0] == '+');
-      for (size_t j = 1; cmd->argv.data[i][j]; j++) {
-        switch (cmd->argv.data[i][j]) {
+    string elem = *(string*)array_checked_get(cmd->argv, i);
+    if (string__startswith(elem, _SLIT("-")) || string__startswith(elem, _SLIT("+"))) {
+      unset_mode = (elem.str[0] == '+');
+      for (size_t j = 1; elem.str[j]; j++) {
+        switch (elem.str[j]) {
           case 'a': set_array = !unset_mode; break;
           case 'A': set_assoc_array = !unset_mode; break;
           case 'i': set_integer = !unset_mode; break;
@@ -34,17 +37,20 @@ int builtin_declare(Command *cmd) {
           case 'r': set_readonly = !unset_mode; break;
           case 'x': set_export = !unset_mode; break;
           default:
-            fprintf(stderr, "declare: invalid option '%c'\n", cmd->argv.data[i][j]);
+            fprintf(stderr, "declare: invalid option '%c'\n", elem.str[j]);
             return 1;
         }
       }
     } else {
-      char *name = cmd->argv.data[i];
-      char *value = strchr(name, '=');
-      if (value) {
-        *value = '\0';
-        value++;
+      string _elem = *(string*)array_checked_get(cmd->argv, i);
+      ssize_t equals_pos = string__indexof(_elem, _SLIT("="));
+      if (equals_pos == -1) {
+        fprintf(stderr, "declare: invalid argument '%s'\n", _elem.str);
+        return 1;
       }
+
+      string name = string__substring(_elem, 0, equals_pos);
+      string value = string__substring(_elem, equals_pos + 1);
 
       Variable *var = get_variable(variable_table, name);
       VariableType type = VAR_STRING;
@@ -55,10 +61,10 @@ int builtin_declare(Command *cmd) {
         if (set_assoc_array) type = VAR_ASSOCIATIVE_ARRAY;
         if (set_nameref) type = VAR_NAMEREF;
       } else {
-        if (value) type = parse_variable_type(value);
+        if (!string__is_null_or_empty(value)) type = parse_variable_type(value);
       }
 
-      if (type == VAR_NAMEREF && value == NULL) {
+      if (type == VAR_NAMEREF && string__is_null_or_empty(value)) {
         fprintf(stderr, "declare: nameref requires a value\n");
         return 1;
       }
@@ -74,9 +80,9 @@ int builtin_declare(Command *cmd) {
         else if (set_lowercase) ((unset_mode)?unset_variable_flag:set_variable_flag)(&var->flags, VarFlag_Lowercase);
         set_variable(variable_table, name, value, type, false);
       } else if (type == VAR_NAMEREF) {
-        var->value._str = rstrdup(value);
+        var->value._str = string__from(value);
         if (get_variable(variable_table, value) == NULL)
-          set_variable(variable_table, value, "", VAR_STRING, false);
+          set_variable(variable_table, value, _SLIT(""), VAR_STRING, false);
       } else {
         VariableType vt = parse_variable_type(value);
         if (vt != type) {
@@ -88,6 +94,8 @@ int builtin_declare(Command *cmd) {
       if (set_readonly) ((unset_mode)?unset_variable_flag:set_variable_flag)(&var->flags, VarFlag_ReadOnly);
       if (set_export) ((unset_mode)?unset_variable_flag:set_variable_flag)(&var->flags, VarFlag_Exported);
       process_exported_variable(var);
+      string__free(name);
+      string__free(value);
     }
   }
 
