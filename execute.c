@@ -362,7 +362,7 @@ int parse_and_execute(const string input) {
 
           if (background) {
             string command_line = command_list_to_string(command_list);
-            if (string__is_null_or_empty(command_line)) {
+            if (!string__is_null_or_empty(command_line)) {
               execute_background_job(command_list, command_line);
               string__free(command_line);
             }
