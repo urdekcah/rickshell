@@ -113,7 +113,7 @@ int execute_command(Command* cmd) {
         set_associative_array_variable(variable_table, name, key, _value);
       } else if (var != NULL && var->value.type == VAR_ARRAY) {
         long long index;
-        StrconvResult result = ratoll(key.str, &index);
+        StrconvResult result = ratoll(key, &index);
         if (result.is_err) {
           print_error(_SLIT("Invalid key for associative array"));
           return -1;

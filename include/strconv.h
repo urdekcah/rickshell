@@ -2,6 +2,7 @@
 #define __RICKSHELL_STRCONV_H__
 #include <stddef.h>
 #include "result.h"
+#include "rstring.h"
 
 typedef enum {
   STRCONV_SUCCESS = 0,
@@ -10,14 +11,14 @@ typedef enum {
   STRCONV_INVALID_INPUT
 } StrconvErrCode;
 
-StrconvResult ratoi(const char* str, int* out);
-StrconvResult ratol(const char* str, long* out);
-StrconvResult ratoll(const char* str, long long* out);
-StrconvResult ratof(const char* str, float* out);
-StrconvResult ratod(const char* str, double* out);
-StrconvResult ritoa(int value, char* str, size_t size);
-StrconvResult rltos(long value, char* str, size_t size);
-StrconvResult rlltos(long long value, char* str, size_t size);
-StrconvResult rftos(float value, char* str, size_t size);
-StrconvResult rdtos(double value, char* str, size_t size);
+StrconvResult ratoi(const string str, int* out);
+StrconvResult ratol(const string str, long* out);
+StrconvResult ratoll(const string str, long long* out);
+StrconvResult ratof(const string str, float* out);
+StrconvResult ratod(const string str, double* out);
+StrconvResult ritoa(int value, size_t size);
+StrconvResult rltos(long value, size_t size);
+StrconvResult rlltos(long long value, size_t size);
+StrconvResult rftos(float value, size_t size);
+StrconvResult rdtos(double value, size_t size);
 #endif

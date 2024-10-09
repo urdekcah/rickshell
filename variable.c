@@ -116,7 +116,7 @@ Variable* set_variable(VariableTable* table, const string name, const string val
       process_string_variable(var);
       break;
     case VAR_INTEGER:
-      StrconvResult result = ratoll(value.str, &var->value._number);
+      StrconvResult result = ratoll(value, &var->value._number);
       if (result.is_err) {
         print_error(_SLIT("Failed to convert string to integer"));
         return NULL;
@@ -535,7 +535,7 @@ string expand_variables(VariableTable* table, const string input) {
               }
             } else if (var && var->value.type == VAR_ARRAY) {
               long long index;
-              StrconvResult sres = ratoll(key.str, &index);
+              StrconvResult sres = ratoll(key, &index);
               if (!sres.is_err) {
                 if (index >= 0 && index < (long long)var->value._array.size) {
                   va_value_t* value = array_checked_get(var->value._array, (size_t)index);
@@ -890,7 +890,7 @@ string expand_variables(VariableTable* table, const string input) {
                 switch (var->value.type) {
                   case VAR_ARRAY: {
                     long long index;
-                    StrconvResult sres = ratoll(expanded_index.str, &index);
+                    StrconvResult sres = ratoll(expanded_index, &index);
                     if (!sres.is_err && index >= 0 && index < (long long)var->value._array.size) {
                       va_value_t* value = array_checked_get(var->value._array, (size_t)index);
                       string str_value = va_value_to_string(value);
