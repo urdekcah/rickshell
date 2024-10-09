@@ -9,6 +9,7 @@
 #include "memory.h"
 #include "rstring.h"
 #include "array.h"
+#include "io.h"
 
 extern VariableTable* variable_table;
 
@@ -51,7 +52,7 @@ int builtin_readonly(Command *cmd) {
       Variable *var = &variable_table->variables[i];
       if (is_variable_flag_set(&var->flags, VarFlag_ReadOnly)) {
         string value = va_value_to_string(&var->value);
-        printf("readonly %s=%s\n", var->name.str, value.str);
+        fprintln("readonly %S=%S", var->name, value);
         string__free(value);
       }
     }

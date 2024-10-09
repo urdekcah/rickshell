@@ -4,6 +4,7 @@
 #include <ctype.h>
 #include "variable.h"
 #include "memory.h"
+#include "io.h"
 #include "error.h"
 #include "expr.h"
 #include "execute.h"
@@ -196,7 +197,7 @@ void parse_and_set_associative_array(VariableTable* table, const string name, co
   Variable* var = create_new_variable(table, name, VAR_ASSOCIATIVE_ARRAY);
 
   if (input.str[0] != '{' || input.str[input.len - 1] != '}') {
-    fprintf(stderr, "Invalid input format\n");
+    ffprintln(stderr, "Invalid input format");
     return;
   }
 
@@ -208,7 +209,7 @@ void parse_and_set_associative_array(VariableTable* table, const string name, co
     if (equal_sign != NULL) {
       *equal_sign = '\0';
       if (token[0] != '[') {
-        fprintf(stderr, "Invalid key format\n");
+        ffprintln(stderr, "Invalid key format");
         string__free(trimmed_input);
         return;
       }
@@ -407,7 +408,7 @@ va_value_t string_to_va_value(const string str, VariableType type) {
         if (equal_sign != NULL) {
           *equal_sign = '\0';
           if (token[0] != '[') {
-            fprintf(stderr, "Invalid key format\n");
+            ffprintln(stderr, "Invalid key format");
             string__free(trimmed_input);
             result.type = VAR_STRING;
             result._str = _SLIT0;

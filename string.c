@@ -8,6 +8,7 @@
 #include <assert.h>
 #include "rstring.h"
 #include "memory.h"
+#include "io.h"
 
 string string__create(const char* s, size_t len) {
   string str;
@@ -129,7 +130,7 @@ string string__concat_many(int count, ...) {
     
   char* new_str = (char*)malloc(total_len + 1);
   if (!new_str) {
-    fprintf(stderr, "Memory allocation failed\n");
+    ffprintln(stderr, "Memory allocation failed");
     exit(1);
   }
     
@@ -496,7 +497,7 @@ void rstring__trim(string s) {
 void string__free(string s) {
   if (s.is_lit) return;
   if (s.is_lit == -997) {
-    printf("Double free detected\n");
+    println(_SLIT("Double free detected"));
     return;
   }
   s.is_lit = -997;

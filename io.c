@@ -4,8 +4,11 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <unistd.h>
+#include <stdarg.h>
 #include <errno.h>
+#include <fcntl.h>
 #include "rstring.h"
+#include "strconv.h"
 #include "memory.h"
 #include "io.h"
 
@@ -36,7 +39,7 @@ ssize_t _write_to_fd(int fd, string s) {
                  (fd == STDERR_FILENO) ? stderr : 
                  fdopen(fd, "w");
   if (stream == NULL) {
-    fprintf(stderr, "Failed to open stream: %s\n", strerror(errno));
+    ffprintln(stderr, "Failed to open stream: %s", strerror(errno));
     return -1;
   }
   size_t total_written = 0;
@@ -45,7 +48,7 @@ ssize_t _write_to_fd(int fd, string s) {
     size_t written = fwrite(s.str + total_written, 1, chunk_size, stream);
     if (written == 0) {
       if (ferror(stream)) {
-        fprintf(stderr, "Write error: %s\n", strerror(errno));
+        ffprintln(stderr, "Write error: %s", strerror(errno));
         return -1;
       }
       break;
@@ -53,7 +56,7 @@ ssize_t _write_to_fd(int fd, string s) {
     total_written += written;
   }
   if (fflush(stream) != 0) {
-    fprintf(stderr, "Failed to flush stream: %s\n", strerror(errno));
+    ffprintln(stderr, "Failed to flush stream: %s", strerror(errno));
     return -1;
   }
   return (ssize_t)total_written;
@@ -79,8 +82,52 @@ void print(string s) {
 }
 
 void println(string s) {
+  if (string__is_null_or_empty(s)) {
+    _write_to_fd(STDOUT_FILENO, _SLIT("\n"));
+    return;
+  }
   fflush(stdout);
   fflush(stderr);
   _writeln_to_fd(STDOUT_FILENO, s);
   fflush(stdout);
+}
+
+void fprint(const char* format, ...) {
+  va_list args;
+  va_start(args, format);
+  string result = format_string(format, args);
+  va_end(args);
+
+  print(result);
+  string__free(result);
+}
+
+void fprintln(const char* format, ...) {
+  va_list args;
+  va_start(args, format);
+  string result = format_string(format, args);
+  va_end(args);
+
+  println(result);
+  string__free(result);
+}
+
+void ffprint(FILE* __stream, const char* format, ...) {
+  va_list args;
+  va_start(args, format);
+  string result = format_string(format, args);
+  va_end(args);
+
+  _write_to_fd(fileno(__stream), result);
+  string__free(result);
+}
+
+void ffprintln(FILE* __stream, const char* format, ...) {
+  va_list args;
+  va_start(args, format);
+  string result = format_string(format, args);
+  va_end(args);
+
+  _writeln_to_fd(fileno(__stream), result);
+  string__free(result);
 }

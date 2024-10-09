@@ -16,6 +16,7 @@
 #include "log.h"
 #include "job.h"
 #include "variable.h"
+#include "io.h"
 
 #define INITIAL_BUFFER_SIZE (1 * 1024)  // 1 KB initial size
 #define MAX_BUFFER_SIZE (100 * 1024 * 1024)  // 100 MB limit
@@ -89,9 +90,9 @@ static void print_prompt(void) {
   char* cwd = get_current_directory();
 
   if (hostname && username && cwd) {
-    printf(ANSI_COLOR_BOLD_BLUE "%s@%s" ANSI_COLOR_BOLD_BLACK ":" ANSI_COLOR_BOLD_YELLOW "%s" ANSI_COLOR_RESET "$ ", username, hostname, cwd);
+    fprint(ANSI_COLOR_BOLD_BLUE "%s@%s" ANSI_COLOR_BOLD_BLACK ":" ANSI_COLOR_BOLD_YELLOW "%s" ANSI_COLOR_RESET "$ ", username, hostname, cwd);
   } else {
-    printf("daniel@fishydino:~$ ");  // Daniel (Elliott): English name of rickroot30
+    fprint("daniel@fishydino:~$ ");  // Daniel (Elliott): English name of rickroot30
   }
 
   fflush(stdout);
@@ -135,7 +136,7 @@ static string get_input() {
     }
         
     if (sb.len >= MAX_BUFFER_SIZE) {
-      fprintf(stderr, "Error: Input too large\n");
+      ffprintln(stderr, "Error: Input too large");
       string_builder__free(&sb);
       return _SLIT0;
     }
@@ -160,7 +161,7 @@ static int setup_signal_handler(void) {
 
 static int process_command(const string input) {
   if (string__length(input) > MAX_COMMAND_LENGTH) {
-    fprintf(stderr, "Error: Command too long\n");
+    ffprintln(stderr, "Error: Command too long");
     return -1;
   }
 
@@ -189,7 +190,7 @@ int main(void) {
   };
   log_init(&config);
 
-  printf("Enter commands (type 'exit' to quit):\n");
+  println(_SLIT("Enter commands (type 'exit' to quit):"));
   log_info("Shell started");
 
   while (keep_running) {
@@ -199,8 +200,10 @@ int main(void) {
     string input = get_input();
 
     if (string__is_null_or_empty(input)) {
+      string__free(input);
       if (feof(stdin)) {
-        printf("\nEnd of input. Exiting...\n");
+        println(_SLIT0);
+        println(_SLIT("End of input. Exiting..."));
         break;
       }
       continue;
@@ -215,7 +218,7 @@ int main(void) {
     string__free(input);
 
     if (result == 1) {
-      printf("Exiting...\n");
+      println(_SLIT("Exiting..."));
       break;
     }
 

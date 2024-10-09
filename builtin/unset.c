@@ -8,6 +8,7 @@
 #include "expr.h"
 #include "rstring.h"
 #include "array.h"
+#include "io.h"
 
 extern VariableTable* variable_table;
 
@@ -30,7 +31,7 @@ int builtin_unset(Command* cmd) {
           _unset_variable = true;
           break;
         default:
-          fprintf(stderr, "unset: invalid option -%c\n", elem.str[j]);
+          ffprintln(stderr, "unset: invalid option -%c", elem.str[j]);
           return 1;
       }
     }
@@ -47,7 +48,7 @@ int builtin_unset(Command* cmd) {
       Variable* var = get_variable(variable_table, name);
       if (var) {
         if (is_variable_flag_set(&var->flags, VarFlag_ReadOnly)) {
-          fprintf(stderr, "unset: %s: cannot unset: readonly variable\n", name.str);
+          ffprintln(stderr, "unset: %S: cannot unset: readonly variable", name);
           exit_status = 1;
         } else {
           unset_variable(variable_table, name);
@@ -57,7 +58,7 @@ int builtin_unset(Command* cmd) {
     }
 
     if (!success) {
-      printf("unset: \"%s\" not found\n", name.str);
+      fprintln("unset: \"%S\" not found", name);
     }
     string__free(name);
   }

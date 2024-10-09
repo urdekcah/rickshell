@@ -11,6 +11,7 @@
 #include "pipeline.h"
 #include "redirect.h"
 #include "execute.h"
+#include "io.h"
 #include "job.h"
 #include "memory.h"
 #include "error.h"
@@ -181,7 +182,7 @@ int execute_command(Command* cmd) {
     if (WIFEXITED(status)) {
       return WEXITSTATUS(status);
     } else if (WIFSIGNALED(status)) {
-      fprintf(stderr, "Command terminated by signal %d\n", WTERMSIG(status));
+      ffprintln(stderr, "Command terminated by signal %d", WTERMSIG(status));
       return 128 + WTERMSIG(status);
     }
   }
@@ -372,10 +373,10 @@ int parse_and_execute(const string input) {
           free_command_list(command_list);
           command_list = NULL;
         } else {
-          printf("No commands to execute\n");
+          println(_SLIT("No commands to execute"));
         }
       } else {
-        printf("Failed to parse the command\n");
+        println(_SLIT("Failed to parse the command"));
         break;
       }
     }

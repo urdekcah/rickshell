@@ -4,6 +4,7 @@
 #include <string.h>
 #include <ctype.h>
 #include "builtin.h"
+#include "io.h"
 #include "variable.h"
 #include "memory.h"
 #include "rstring.h"
@@ -13,7 +14,7 @@ extern VariableTable* variable_table;
 
 int builtin_declare(Command *cmd) {
   if (cmd->argv.size < 2) {
-    fprintf(stderr, "declare: usage: declare [-aAilunrx] [name[=value] ...]\n");
+    ffprintln(stderr, "declare: usage: declare [-aAilunrx] [name[=value] ...]");
     return 1;
   }
 
@@ -37,7 +38,7 @@ int builtin_declare(Command *cmd) {
           case 'r': set_readonly = !unset_mode; break;
           case 'x': set_export = !unset_mode; break;
           default:
-            fprintf(stderr, "declare: invalid option '%c'\n", elem.str[j]);
+            ffprintln(stderr, "declare: invalid option '%c'", elem.str[j]);
             return 1;
         }
       }
@@ -45,7 +46,7 @@ int builtin_declare(Command *cmd) {
       string _elem = *(string*)array_checked_get(cmd->argv, i);
       ssize_t equals_pos = string__indexof(_elem, _SLIT("="));
       if (equals_pos == -1) {
-        fprintf(stderr, "declare: invalid argument '%s'\n", _elem.str);
+        ffprintln(stderr, "declare: invalid argument '%S'", _elem);
         return 1;
       }
 
@@ -65,13 +66,13 @@ int builtin_declare(Command *cmd) {
       }
 
       if (type == VAR_NAMEREF && string__is_null_or_empty(value)) {
-        fprintf(stderr, "declare: nameref requires a value\n");
+        ffprintln(stderr, "declare: nameref requires a value");
         return 1;
       }
 
       if (var == NULL) var = create_new_variable(variable_table, name, type);
       if (var == NULL) {
-        fprintf(stderr, "declare: failed to create variable\n");
+        ffprintln(stderr, "declare: failed to create variable");
         return 1;
       }
 
@@ -86,7 +87,7 @@ int builtin_declare(Command *cmd) {
       } else {
         VariableType vt = parse_variable_type(value);
         if (vt != type) {
-          fprintf(stderr, "declare: type does not match\n");
+          ffprintln(stderr, "declare: type does not match");
           return 1;
         }
         set_variable(variable_table, name, value, type, false);

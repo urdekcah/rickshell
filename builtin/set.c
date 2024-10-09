@@ -9,6 +9,7 @@
 #include "rstring.h"
 #include "array.h"
 #include "strconv.h"
+#include "io.h"
 
 extern VariableTable* variable_table;
 
@@ -34,7 +35,7 @@ int builtin_set(Command* cmd) {
       Variable* var = get_variable(variable_table, elem);
       if (var) {
         string value = va_value_to_string(&var->value);
-        printf("%s=%s\n", var->name.str, value.str);
+        fprintln("%S=%S", var->name, value);
         string__free(value);
       }
     }

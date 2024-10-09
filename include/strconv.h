@@ -21,4 +21,35 @@ StrconvResult rltos(long value, size_t size);
 StrconvResult rlltos(long long value, size_t size);
 StrconvResult rftos(float value, size_t size);
 StrconvResult rdtos(double value, size_t size);
-#endif
+
+typedef enum {
+  FmtChar,
+  FmtInt,
+  FmtUint,
+  FmtLong,
+  FmtUlong,
+  FmtLongLong,
+  FmtUlongLong,
+  FmtDouble,
+  FmtString,
+  FmtRstring,
+  FmtPointer,
+  FmtPercent
+} FormatType;
+
+typedef struct {
+  FormatType type;
+  int width;
+  int precision;
+  bool left_justify;
+  bool show_sign;
+  bool space_prefix;
+  bool alternative_form;
+  bool zero_pad;
+  char length_modifier;
+  int base;
+} FormatSpecifier;
+
+void parse_format_specifier(const char** format, FormatSpecifier* spec, va_list* args);
+string format_string(const char* format, va_list args);
+#endif /* __RICKSHELL_STRCONV_H__ */
