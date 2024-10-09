@@ -102,16 +102,4 @@ bool string_builder__equals(StringBuilder* sb, StringBuilder* other);
 string string_builder__to_string(StringBuilder* sb);
 void string_builder__clear(StringBuilder* sb);
 void string_builder__free(StringBuilder* sb);
-
-char* remove_quotes(const char* str);
-char* str_replace(const char* src, const char* old, const char* new, bool replace_all);
-bool match_pattern(const char* str, const char* pattern);
-char* remove_prefix(const char* value, const char* pattern, bool is_longest_match);
-char* remove_suffix(const char* str, const char* suffix, bool greedy);
-char* dynstrcpy(char** dest, size_t* dest_size, size_t* dest_len, const char* src);
-void ltrim(char* str);
-void rtrim(char* str);
-void trim(char* str);
-void strupper(char* str);
-void strlower(char* str);
 #endif /* __RICKSHELL_RSTRING_H__ */
