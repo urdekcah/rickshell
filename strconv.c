@@ -138,7 +138,7 @@ StrconvResult rdtos(double value, size_t size) {
 static void format_integer(char* buffer, size_t buffer_size, uintmax_t value, FormatSpecifier* spec) {
   char tmp[65];
   int len = 0;
-  const char* digits = (spec->type == FmtUint || spec->alternative_form) ? "0123456789ABCDEF" : "0123456789abcdef";
+  const char* digits = (spec->type == FmtUint || spec->uppercase) ? "0123456789ABCDEF" : "0123456789abcdef";
 
   do {
     tmp[len++] = digits[value % (uintmax_t)spec->base];
@@ -153,30 +153,34 @@ static void format_integer(char* buffer, size_t buffer_size, uintmax_t value, Fo
     tmp[len++] = ' ';
   }
 
-  if (spec->alternative_form && spec->base == 16) {
-    tmp[len++] = 'x';
-    tmp[len++] = '0';
-  } else if (spec->alternative_form && spec->base == 8 && tmp[len-1] != '0') {
-    tmp[len++] = '0';
+  if (spec->alternative_form) {
+    if (spec->base == 16) {
+      tmp[len++] = spec->uppercase ? 'X' : 'x';
+      tmp[len++] = '0';
+    } else if (spec->base == 8 && tmp[len-1] != '0') {
+      tmp[len++] = '0';
+    }
   }
 
-  size_t padding = (spec->width > len) ? (size_t)(spec->width - len) : 0;
-  size_t total_len = (size_t)len + padding;
+  int min_width = (spec->precision > len) ? spec->precision : len;
+  size_t padding = (spec->width > min_width) ? (size_t)(spec->width - min_width) : 0;
+  size_t total_len = (size_t)min_width + padding;
 
   if (total_len >= buffer_size) {
     total_len = buffer_size - 1;
-    len = (int)(total_len - padding);
+    min_width = (int)(total_len - padding);
   }
 
   size_t index = 0;
-  if (!spec->left_justify && spec->zero_pad) {
+  if (!spec->left_justify) {
+    char pad_char = (spec->zero_pad && spec->precision < 0) ? '0' : ' ';
     for (size_t i = 0; i < padding; i++) {
-      buffer[index++] = '0';
+      buffer[index++] = pad_char;
     }
-  } else if (!spec->left_justify) {
-    for (size_t i = 0; i < padding; i++) {
-      buffer[index++] = ' ';
-    }
+  }
+
+  for (int i = len; i < min_width; i++) {
+    buffer[index++] = '0';
   }
 
   for (int i = len - 1; i >= 0; i--) {
@@ -196,11 +200,18 @@ static void format_float(char* buffer, size_t buffer_size, long double value, Fo
   char format[32];
   char tmp[128];
   
-  snprintf(format, sizeof(format), "%%%s%d.%dL%c",
-       (spec->left_justify ? "-" : ""),
-       (spec->width > 0 ? spec->width : 0),
-       (spec->precision >= 0 ? spec->precision : 6),
-       (spec->type == FmtDouble ? 'f' : 'g'));
+  char type_char = spec->type == FmtDouble ? 'f' : 
+           (spec->type == FmtExponent ? (spec->uppercase ? 'E' : 'e') :
+           (spec->type == FmtAuto ? (spec->uppercase ? 'G' : 'g') : 'a'));
+  
+  snprintf(format, sizeof(format), "%%%s%s%s%s%d.%dL%c",
+    (spec->left_justify ? "-" : ""),
+    (spec->show_sign ? "+" : (spec->space_prefix ? " " : "")),
+    (spec->alternative_form ? "#" : ""),
+    (spec->zero_pad ? "0" : ""),
+    (spec->width > 0 ? spec->width : 0),
+    (spec->precision >= 0 ? spec->precision : 6),
+    type_char);
   
   snprintf(tmp, sizeof(tmp), format, value);
   
@@ -212,7 +223,7 @@ static void format_float(char* buffer, size_t buffer_size, long double value, Fo
   buffer[len] = '\0';
 }
 
-void parse_format_specifier(const char** format, FormatSpecifier* spec, va_list* args) {
+void parse_format_specifier(const char** format, FormatSpecifier* spec, va_list args) {
   spec->width = -1;
   spec->precision = -1;
   spec->left_justify = false;
@@ -220,6 +231,7 @@ void parse_format_specifier(const char** format, FormatSpecifier* spec, va_list*
   spec->space_prefix = false;
   spec->alternative_form = false;
   spec->zero_pad = false;
+  spec->uppercase = false;
   spec->length_modifier = '\0';
   spec->base = 10;
 
@@ -236,42 +248,54 @@ void parse_format_specifier(const char** format, FormatSpecifier* spec, va_list*
   }
 parse_width:
   if (**format == '*') {
-    spec->width = va_arg(*args, int);
+    spec->width = va_arg(args, int);
     (*format)++;
   } else {
-    int width;
-    string temp = string__new(*format);
-    StrconvResult res = ratoi(temp, &width);
-    string__free(temp);
-    spec->width = (res.is_err) ? -1 : width;
+    spec->width = 0;
+    while (isdigit(**format)) {
+      spec->width = spec->width * 10 + (**format - '0');
+      (*format)++;
+    }
   }
 
   if (**format == '.') {
     (*format)++;
     if (**format == '*') {
-      spec->precision = va_arg(*args, int);
+      spec->precision = va_arg(args, int);
       (*format)++;
     } else {
-      int precision;
-      string temp = string__new(*format);
-      StrconvResult res = ratoi(temp, &precision);
-      string__free(temp);
-      spec->precision = (res.is_err) ? -1 : precision;
+      spec->precision = 0;
+      while (isdigit(**format)) {
+        spec->precision = spec->precision * 10 + (**format - '0');
+        (*format)++;
+      }
     }
   }
 
   switch (**format) {
     case 'h':
-    case 'l':
-    case 'L':{
-      spec->length_modifier = **format;
+      spec->length_modifier = 'h';
       (*format)++;
-      if (spec->length_modifier == 'l' && **format == 'l') {
+      if (**format == 'h') {
+        spec->length_modifier = 'H';
+        (*format)++;
+      }
+      break;
+    case 'l':
+      spec->length_modifier = 'l';
+      (*format)++;
+      if (**format == 'l') {
         spec->length_modifier = 'L';
         (*format)++;
       }
       break;
-    }
+    case 'L':
+    case 'j':
+    case 'z':
+    case 't':
+      spec->length_modifier = **format;
+      (*format)++;
+      break;
   }
 
   switch (**format) {
@@ -279,19 +303,19 @@ parse_width:
     case 'i': spec->type = FmtInt; break;
     case 'u': spec->type = FmtUint; break;
     case 'f':
-    case 'F':
+    case 'F': spec->type = FmtDouble; spec->uppercase = (**format == 'F'); break;
     case 'e':
-    case 'E':
+    case 'E': spec->type = FmtExponent; spec->uppercase = (**format == 'E'); break;
     case 'g':
-    case 'G':
+    case 'G': spec->type = FmtAuto; spec->uppercase = (**format == 'G'); break;
     case 'a':
-    case 'A': spec->type = FmtDouble; break;
+    case 'A': spec->type = FmtHex; spec->uppercase = (**format == 'A'); break;
     case 'c': spec->type = FmtChar; break;
     case 's': spec->type = FmtRstring; break;
     case 'S': spec->type = FmtString; break;
     case 'p': spec->type = FmtPointer; break;
-    case 'x':
-    case 'X': spec->type = FmtUint; spec->base = 16; break;
+    case 'x': spec->type = FmtUint; spec->base = 16; break;
+    case 'X': spec->type = FmtUint; spec->base = 16; spec->uppercase = true; break;
     case 'o': spec->type = FmtUint; spec->base = 8; break;
     case '%': spec->type = FmtPercent; break;
     default: spec->type = FmtPercent; (*format)--; break;
@@ -304,6 +328,9 @@ string format_string(const char* format, va_list args) {
   FormatSpecifier spec;
   char buffer[512];
 
+  va_list args_copy;
+  va_copy(args_copy, args);
+
   while (*format) {
     if (*format != '%') {
       string_builder__append_char(&sb, *format++);
@@ -311,7 +338,7 @@ string format_string(const char* format, va_list args) {
     }
 
     format++;
-    parse_format_specifier((const char**)&format, &spec, (va_list*)&args);
+    parse_format_specifier(&format, &spec, args_copy);
     
     switch (spec.type) {
       case FmtChar: {
@@ -328,22 +355,33 @@ string format_string(const char* format, va_list args) {
         uintmax_t value;
         if (spec.type == FmtInt || spec.type == FmtLong || spec.type == FmtLongLong) {
           intmax_t signed_value;
-          if (spec.length_modifier == 'h') signed_value = (short)va_arg(args, int);
+          if (spec.length_modifier == 'H') signed_value = (signed char)va_arg(args, int);
+          else if (spec.length_modifier == 'h') signed_value = (short)va_arg(args, int);
           else if (spec.length_modifier == 'l') signed_value = va_arg(args, long);
           else if (spec.length_modifier == 'L') signed_value = va_arg(args, long long);
+          else if (spec.length_modifier == 'j') signed_value = va_arg(args, intmax_t);
+          else if (spec.length_modifier == 'z') signed_value = va_arg(args, ssize_t);
+          else if (spec.length_modifier == 't') signed_value = va_arg(args, ptrdiff_t);
           else signed_value = va_arg(args, int);
           value = (signed_value < 0) ? (uintmax_t)(-signed_value) : (uintmax_t)signed_value;
         } else {
-          if (spec.length_modifier == 'h') value = (unsigned short)va_arg(args, unsigned int);
+          if (spec.length_modifier == 'H') value = (unsigned char)va_arg(args, unsigned int);
+          else if (spec.length_modifier == 'h') value = (unsigned short)va_arg(args, unsigned int);
           else if (spec.length_modifier == 'l') value = va_arg(args, unsigned long);
           else if (spec.length_modifier == 'L') value = va_arg(args, unsigned long long);
+          else if (spec.length_modifier == 'j') value = va_arg(args, uintmax_t);
+          else if (spec.length_modifier == 'z') value = va_arg(args, size_t);
+          else if (spec.length_modifier == 't') value = (uintmax_t)va_arg(args, ptrdiff_t);
           else value = va_arg(args, unsigned int);
         }
         format_integer(buffer, sizeof(buffer), value, &spec);
         string_builder__append_cstr(&sb, buffer);
         break;
       }
-      case FmtDouble: {
+      case FmtDouble:
+      case FmtExponent:
+      case FmtAuto:
+      case FmtHex: {
         long double value;
         if (spec.length_modifier == 'L') value = va_arg(args, long double);
         else value = va_arg(args, double);
@@ -353,12 +391,30 @@ string format_string(const char* format, va_list args) {
       }
       case FmtRstring: {
         char* str = va_arg(args, char*);
-        string_builder__append_cstr(&sb, str ? str : "(null)");
+        if (str) {
+          size_t len = strlen(str);
+          if (spec.precision >= 0 && (size_t)spec.precision < len) {
+            len = (size_t)spec.precision;
+          }
+          string s = string__new(str);
+          string s2 = string__substring(s, 0, (ssize_t)len);
+          string_builder__append(&sb, s2);
+          string__free(s);
+          string__free(s2);
+        } else {
+          string_builder__append_cstr(&sb, "(null)");
+        }
         break;
       }
       case FmtString: {
         string str = va_arg(args, string);
-        string_builder__append(&sb, str);
+        if (spec.precision >= 0 && (size_t)spec.precision < str.len) {
+          string s2 = string__substring(str, 0, (ssize_t)spec.precision);
+          string_builder__append(&sb, s2);
+          string__free(s2);
+        } else {
+          string_builder__append(&sb, str);
+        }
         break;
       }
       case FmtPointer: {
@@ -374,6 +430,7 @@ string format_string(const char* format, va_list args) {
     }
   }
   
+  va_end(args_copy);
   string result = string_builder__to_string(&sb);
   string_builder__free(&sb);
   return result;

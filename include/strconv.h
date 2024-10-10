@@ -31,6 +31,9 @@ typedef enum {
   FmtLongLong,
   FmtUlongLong,
   FmtDouble,
+  FmtExponent,
+  FmtAuto,
+  FmtHex,
   FmtString,
   FmtRstring,
   FmtPointer,
@@ -41,6 +44,7 @@ typedef struct {
   FormatType type;
   int width;
   int precision;
+  bool uppercase;
   bool left_justify;
   bool show_sign;
   bool space_prefix;
@@ -50,6 +54,6 @@ typedef struct {
   int base;
 } FormatSpecifier;
 
-void parse_format_specifier(const char** format, FormatSpecifier* spec, va_list* args);
+void parse_format_specifier(const char** format, FormatSpecifier* spec, va_list args);
 string format_string(const char* format, va_list args);
 #endif /* __RICKSHELL_STRCONV_H__ */
