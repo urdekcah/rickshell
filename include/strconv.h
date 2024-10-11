@@ -6,6 +6,7 @@
 
 typedef enum {
   STRCONV_SUCCESS = 0,
+  STRCONV_CONVERSION_ERROR,
   STRCONV_OVERFLOW,
   STRCONV_UNDERFLOW,
   STRCONV_INVALID_INPUT
@@ -16,11 +17,11 @@ StrconvResult ratol(const string str, long* out);
 StrconvResult ratoll(const string str, long long* out);
 StrconvResult ratof(const string str, float* out);
 StrconvResult ratod(const string str, double* out);
-StrconvResult ritoa(int value, size_t size);
-StrconvResult rltos(long value, size_t size);
-StrconvResult rlltos(long long value, size_t size);
-StrconvResult rftos(float value, size_t size);
-StrconvResult rdtos(double value, size_t size);
+StrconvResult ritoa(int value);
+StrconvResult rltos(long value);
+StrconvResult rlltos(long long value);
+StrconvResult rftos(float value);
+StrconvResult rdtos(double value);
 
 typedef enum {
   FmtChar,

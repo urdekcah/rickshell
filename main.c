@@ -178,15 +178,15 @@ int main(void) {
 
   init_variables();
   LogConfig config = {
-    .name = "rickshell",
+    .name = _SLIT("rickshell"),
     .level = LOG_LEVEL_INFO,
     .color_output = true,
-    .filename = "~/.rickshell/rickshell.log",
+    .filename = _SLIT("~/.rickshell/rickshell.log"),
     .max_file_size = 10 * 1024 * 1024,  // 10 MB
     .max_backup_files = 10,
     .append_mode = true,
     .file_output_only = true,
-    .log_format = "[%Y-%M-%d %H:%M:%S] [%L] [%p] (%a) %f:%l (%n): %m"
+    .log_format = _SLIT("[%Y-%M-%d %H:%M:%S] [%L] [%p] (%a) %f:%l (%n): %m")
   };
   log_init(&config);
 

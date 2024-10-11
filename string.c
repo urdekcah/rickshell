@@ -564,56 +564,56 @@ void string_builder__append_char(StringBuilder* sb, char c) {
 
 void string_builder__append_short(StringBuilder* sb, short value) {
   char buffer[7];
-  snprintf(buffer, sizeof(buffer), "%hd", value);
-  string temp = string__new(buffer);
+  int result = snprintf(buffer, sizeof(buffer), "%hd", value);
+  string temp = (result < 0) ? _SLIT0 : string__new(buffer);
   string_builder__append(sb, temp);
   string__free(temp);
 }
 
 void string_builder__append_int(StringBuilder* sb, int value) {
   char buffer[12];
-  snprintf(buffer, sizeof(buffer), "%d", value);
-  string temp = string__new(buffer);
+  int result = snprintf(buffer, sizeof(buffer), "%d", value);
+  string temp = (result < 0) ? _SLIT0 : string__new(buffer);
   string_builder__append(sb, temp);
   string__free(temp);
 }
 
 void string_builder__append_long(StringBuilder* sb, long value) {
   char buffer[21];
-  snprintf(buffer, sizeof(buffer), "%ld", value);
-  string temp = string__new(buffer);
+  int result = snprintf(buffer, sizeof(buffer), "%ld", value);
+  string temp = (result < 0) ? _SLIT0 : string__new(buffer);
   string_builder__append(sb, temp);
   string__free(temp);
 }
 
 void string_builder__append_long_long(StringBuilder* sb, long long value) {
   char buffer[21];
-  snprintf(buffer, sizeof(buffer), "%lld", value);
-  string temp = string__new(buffer);
+  int result = snprintf(buffer, sizeof(buffer), "%lld", value);
+  string temp = (result < 0) ? _SLIT0 : string__new(buffer);
   string_builder__append(sb, temp);
   string__free(temp);
 }
 
 void string_builder__append_float(StringBuilder* sb, float value) {
   char buffer[32];
-  snprintf(buffer, sizeof(buffer), "%f", value);
-  string temp = string__new(buffer);
+  int result = snprintf(buffer, sizeof(buffer), "%f", value);
+  string temp = (result < 0) ? _SLIT0 : string__new(buffer);
   string_builder__append(sb, temp);
   string__free(temp);
 }
 
 void string_builder__append_double(StringBuilder* sb, double value) {
   char buffer[32];
-  snprintf(buffer, sizeof(buffer), "%f", value);
-  string temp = string__new(buffer);
+  int result = snprintf(buffer, sizeof(buffer), "%f", value);
+  string temp = (result < 0) ? _SLIT0 : string__new(buffer);
   string_builder__append(sb, temp);
   string__free(temp);
 }
 
 void string_builder__append_long_double(StringBuilder* sb, long double value) {
   char buffer[32];
-  snprintf(buffer, sizeof(buffer), "%Lf", value);
-  string temp = string__new(buffer);
+  int result = snprintf(buffer, sizeof(buffer), "%Lf", value);
+  string temp = (result < 0) ? _SLIT0 : string__new(buffer);
   string_builder__append(sb, temp);
   string__free(temp);
 }

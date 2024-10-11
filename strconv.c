@@ -85,53 +85,63 @@ StrconvResult ratod(const string str, double* out) {
   return Ok((void*)STRCONV_SUCCESS);
 }
 
-StrconvResult ritoa(int value, size_t size) {
+StrconvResult ritoa(int value) {
   StringBuilder sb = string_builder__new();
   string_builder__append_int(&sb, value);
   string s = string_builder__to_string(&sb);
   string_builder__free(&sb);
-  if (s.len >= size)
-    return Err((void*)STRCONV_OVERFLOW);
+  if (string__is_null_or_empty(s)) {
+    string__free(s);
+    return Err((void*)STRCONV_CONVERSION_ERROR);
+  }
   return Ok((void*)&s);
 }
 
-StrconvResult rltos(long value, size_t size) {
+StrconvResult rltos(long value) {
   StringBuilder sb = string_builder__new();
   string_builder__append_long(&sb, value);
   string s = string_builder__to_string(&sb);
   string_builder__free(&sb);
-  if (s.len >= size)
-    return Err((void*)STRCONV_OVERFLOW);
+  if (string__is_null_or_empty(s)) {
+    string__free(s);
+    return Err((void*)STRCONV_CONVERSION_ERROR);
+  }
   return Ok((void*)&s);
 }
 
-StrconvResult rlltos(long long value, size_t size) {
+StrconvResult rlltos(long long value) {
   StringBuilder sb = string_builder__new();
   string_builder__append_long_long(&sb, value);
   string s = string_builder__to_string(&sb);
   string_builder__free(&sb);
-  if (s.len >= size)
-    return Err((void*)STRCONV_OVERFLOW);
+  if (string__is_null_or_empty(s)) {
+    string__free(s);
+    return Err((void*)STRCONV_CONVERSION_ERROR);
+  }
   return Ok((void*)&s);
 }
 
-StrconvResult rftos(float value, size_t size) {
+StrconvResult rftos(float value) {
   StringBuilder sb = string_builder__new();
   string_builder__append_float(&sb, value);
   string s = string_builder__to_string(&sb);
   string_builder__free(&sb);
-  if (s.len >= size)
-    return Err((void*)STRCONV_OVERFLOW);
+  if (string__is_null_or_empty(s)) {
+    string__free(s);
+    return Err((void*)STRCONV_CONVERSION_ERROR);
+  }
   return Ok((void*)&s);
 }
 
-StrconvResult rdtos(double value, size_t size) {
+StrconvResult rdtos(double value) {
   StringBuilder sb = string_builder__new();
   string_builder__append_double(&sb, value);
   string s = string_builder__to_string(&sb);
   string_builder__free(&sb);
-  if (s.len >= size)
-    return Err((void*)STRCONV_OVERFLOW);
+  if (string__is_null_or_empty(s)) {
+    string__free(s);
+    return Err((void*)STRCONV_CONVERSION_ERROR);
+  }
   return Ok((void*)&s);
 }
 

@@ -2,6 +2,7 @@
 #define __RICKSHELL_LOG_H__
 #include <stdarg.h>
 #include <stdbool.h>
+#include "rstring.h"
 
 typedef enum {
   LOG_LEVEL_TRACE,
@@ -13,15 +14,15 @@ typedef enum {
 } LogLevel;
 
 typedef struct {
-  const char* name;
+  const string name;
   LogLevel level;
   bool color_output;
-  const char* filename;
+  const string filename;
   unsigned long max_file_size;
   unsigned int max_backup_files;
   bool append_mode;
   bool file_output_only;
-  const char* log_format;
+  const string log_format;
 } LogConfig;
 
 void log_init(const LogConfig* config);
