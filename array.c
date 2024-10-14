@@ -37,6 +37,13 @@ array create_array_with_capacity(size_t element_size, size_t capacity) {
   return a;
 }
 
+array array_clone_from(array a) {
+  array new_array = create_array_with_capacity(a.element_size, a.capacity);
+  new_array.size = a.size;
+  memcpy(new_array.data, a.data, a.size * a.element_size);
+  return new_array;
+}
+
 void* array_get_first(array a) {
   return a.size > 0 ? a.data : NULL;
 }

@@ -24,6 +24,7 @@ void array_toggle_flag(array* a, ArrayFlag flag);
 array create_array(size_t element_size);
 array create_array_with_first_element(size_t element_size, void* fe);
 array create_array_with_capacity(size_t element_size, size_t capacity);
+array array_clone_from(array a);
 void* array_get_first(array a);
 void* array_get_last(array a);
 void* array_get(array a, size_t index);

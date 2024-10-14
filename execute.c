@@ -134,26 +134,27 @@ int execute_command(Command* cmd) {
     string__free(name);
     return 0;
   } else if (should_not_expand) {
-    StringArray new_data = create_array(cmd->argv.size);
-    for (size_t i = 0; i < cmd->argv.size; i++) {
-      string elem = *(string*)array_get(cmd->argv, i);
+    StringArray _argv = array_clone_from(cmd->argv);
+    array_free(&cmd->argv);
+    cmd->argv = create_array_with_capacity(sizeof(string), _argv.capacity);
+    for (size_t i = 0; i < _argv.size; i++) {
+      string elem = *(string*)array_get(_argv, i);
       if (string__length(elem) > 0 && string__indexof(elem, _SLIT("=")) != -1) {
-        if (i + 1 < cmd->argv.size) {
-          string next = *(string*)array_get(cmd->argv, i + 1);
+        if (i + 1 < _argv.size) {
+          string next = *(string*)array_get(_argv, i + 1);
           string new_elem = string__concat(elem, next);
           string__free(elem);
           string__free(next);
-          array_push(&new_data, &new_elem);
+          array_push(&cmd->argv, &new_elem);
           i++;
         } else {
-          array_push(&new_data, &elem);
+          array_push(&cmd->argv, &elem);
         }
       } else {
-        array_push(&new_data, &elem);
+        array_push(&cmd->argv, &elem);
       }
     }
-    array_free(&cmd->argv);
-    cmd->argv = new_data;
+    array_free(&_argv);
   }
 
   int builtin_result = execute_builtin(cmd);
