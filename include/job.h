@@ -8,7 +8,7 @@ typedef struct Job {
   int job_id;
   pid_t pgid;
   CommandList* cmds;
-  char* command_line;
+  string command_line;
   int status;
   struct Job* next;
 } Job;
@@ -20,11 +20,11 @@ typedef struct {
 } JobList;
 
 void init_job_list(void);
-Job* add_job(pid_t pgid, CommandList* cmds, const char* command_line);
+Job* add_job(pid_t pgid, CommandList* cmds, const string command_line);
 void remove_job(Job* job);
 Job* find_job(int job_id);
 void update_job_status(void);
-int execute_background_job(CommandList* cmds, const char* command_line);
+int execute_background_job(CommandList* cmds, const string command_line);
 void print_jobs(void);
 void cleanup_jobs(void);
 void print_job_status(void);

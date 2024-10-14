@@ -10,6 +10,7 @@
 #include "memory.h"
 #include "error.h"
 #include "execute.h"
+#include "io.h"
 
 static JobList job_list = {NULL, NULL, 1};
 
@@ -19,17 +20,17 @@ void init_job_list(void) {
   job_list.next_job_id = 1;
 }
 
-Job* add_job(pid_t pgid, CommandList* cmds, const char* command_line) {
+Job* add_job(pid_t pgid, CommandList* cmds, const string command_line) {
   Job* job = rmalloc(sizeof(Job));
   if (!job) {
-    print_error("Failed to allocate memory for job");
+    print_error(_SLIT("Failed to allocate memory for job"));
     return NULL;
   }
 
   job->job_id = job_list.next_job_id++;
   job->pgid = pgid;
   job->cmds = cmds;
-  job->command_line = strdup(command_line);
+  job->command_line = string__from(command_line);
   job->status = 0;
   job->next = NULL;
 
@@ -62,7 +63,7 @@ void remove_job(Job* job) {
         job_list.last_job = prev;
       }
 
-      free(job->command_line);
+      string__free(job->command_line);
       free(job);
 
       if (!job_list.first_job) {
@@ -110,7 +111,7 @@ void update_job_status(void) {
   }
 }
 
-int execute_background_job(CommandList* cmds, const char* command_line) {
+int execute_background_job(CommandList* cmds, const string command_line) {
   pid_t pid = fork();
 
   if (pid == 0) {
@@ -121,11 +122,11 @@ int execute_background_job(CommandList* cmds, const char* command_line) {
     setpgid(pid, pid);
     Job* job = add_job(pid, cmds, command_line);
     if (job) {
-      printf("[%d] %d\n", job->job_id, pid);
+      fprintln("[%d] %d", job->job_id, pid);
     }
     return 0;
   } else {
-    print_error("Failed to fork for background job");
+    print_error(_SLIT("Failed to fork for background job"));
     return -1;
   }
 }
@@ -133,7 +134,7 @@ int execute_background_job(CommandList* cmds, const char* command_line) {
 void print_jobs(void) {
   Job* job = job_list.first_job;
   while (job) {
-    printf("[%d] Running\t%s\n", job->job_id, job->command_line);
+    fprintln("[%d] Running\t%S", job->job_id, job->command_line);
     job = job->next;
   }
 }
@@ -157,12 +158,12 @@ void print_job_status(void) {
     
     if (result > 0) {
       if (WIFEXITED(status)) {
-        printf("[%d]+ Done\t\t%s\n", job->job_id, job->command_line);
+        fprintln("[%d]+ Done\t\t%S", job->job_id, job->command_line);
         Job* to_remove = job;
         job = job->next;
         remove_job(to_remove);
       } else if (WIFSIGNALED(status)) {
-        printf("[%d]+ Terminated\t%s\n", job->job_id, job->command_line);
+        fprintln("[%d]+ Terminated\t%S", job->job_id, job->command_line);
         Job* to_remove = job;
         job = job->next;
         remove_job(to_remove);

@@ -7,12 +7,13 @@
 #include <string.h>
 #include <stdlib.h>
 #include "memory.h"
+#include "io.h"
 
 char* expand_home_directory(const char* path) {
   if (path[0] == '~') {
     const char* home = getenv("HOME");
     if (home == NULL) {
-      fprintf(stderr, "Could not get HOME environment variable.\n");
+      ffprintln(stderr, "Could not get HOME environment variable.");
       return NULL;
     }
 

@@ -4,6 +4,7 @@
 #include <ctype.h>
 #include "variable.h"
 #include "memory.h"
+#include "io.h"
 #include "error.h"
 #include "expr.h"
 #include "execute.h"
@@ -30,15 +31,15 @@ VariableTable* create_variable_table() {
 
 void free_variable_table(VariableTable* table) {
   for (int i = 0; i < table->size; i++) {
-    rfree(table->variables[i].name);
-    rfree(table->variables[i].str);
+    string__free(table->variables[i].name);
+    string__free(table->variables[i].str);
     free_va_value(&table->variables[i].value);
   }
   rfree(table->variables);
   rfree(table);
 }
 
-Variable* create_new_variable(VariableTable* table, const char* name, VariableType type) {
+Variable* create_new_variable(VariableTable* table, const string name, VariableType type) {
   Variable* existing = get_variable(table, name);
   if (existing != NULL) return existing;
 
@@ -48,8 +49,8 @@ Variable* create_new_variable(VariableTable* table, const char* name, VariableTy
   }
 
   Variable* var = &table->variables[table->size++];
-  var->name = rstrdup(name);
-  var->str = NULL;
+  var->name = string__from(name);
+  var->str = _SLIT0;
   var->flags = 0;
   var->array_size = 0;
 
@@ -58,7 +59,7 @@ Variable* create_new_variable(VariableTable* table, const char* name, VariableTy
   
   switch (type) {
     case VAR_STRING:
-      var->value._str = NULL;
+      var->value._str = _SLIT0;
       break;
     case VAR_INTEGER:
       var->value._number = 0;
@@ -78,45 +79,47 @@ Variable* create_new_variable(VariableTable* table, const char* name, VariableTy
 
 void process_string_variable(Variable* var) {
   if (!var->value.type == VAR_STRING) return;
-  if (var->value._str == NULL) return;
-  if (is_variable_flag_set(&var->flags, VarFlag_Uppercase)) strupper(var->value._str);
-  else if (is_variable_flag_set(&var->flags, VarFlag_Lowercase)) strlower(var->value._str);
+  if (string__is_null_or_empty(var->value._str)) return;
+  if (is_variable_flag_set(&var->flags, VarFlag_Uppercase)) rstring__upper(var->value._str);
+  else if (is_variable_flag_set(&var->flags, VarFlag_Lowercase)) rstring__upper(var->value._str);
 }
 
 void process_exported_variable(Variable* var) {
   if (is_variable_flag_set(&var->flags, VarFlag_Exported)) {
-    char* value = va_value_to_string(&var->value);
-    setenv(var->name, value, 1);
-    rfree(value);
+    string value = va_value_to_string(&var->value);
+    setenv(var->name.str, value.str, 1);
+    string__free(value);
   }
 }
 
-Variable* set_variable(VariableTable* table, const char* name, const char* value, VariableType type, bool readonly) {
+Variable* set_variable(VariableTable* table, const string name, const string value, VariableType type, bool readonly) {
   Variable* var = get_variable(table, name);
   if (var == NULL) {
     var = create_new_variable(table, name, type);
   } else {
-    rfree(var->str);
+    string__free(var->str);
     free_va_value(&var->value);
   }
 
   if (is_variable_flag_set(&var->flags, VarFlag_ReadOnly)) {
-    print_error("Cannot modify readonly variable");
+    print_error(_SLIT("Cannot modify readonly variable"));
     return NULL;
   }
 
-  var->str = rstrdup(value);
+  var->str = string__from(value);
   var->value.type = type;
 
   switch (type) {
     case VAR_STRING:
-      var->value._str = rstrdup(value);
+      var->value._str = string__remove_quotes(value);
+      string__free(var->str);
+      var->str = string__from(var->value._str);
       process_string_variable(var);
       break;
     case VAR_INTEGER:
       StrconvResult result = ratoll(value, &var->value._number);
       if (result.is_err) {
-        print_error("Failed to convert string to integer");
+        print_error(_SLIT("Failed to convert string to integer"));
         return NULL;
       }
       break;
@@ -136,14 +139,14 @@ Variable* set_variable(VariableTable* table, const char* name, const char* value
   return var;
 }
 
-Variable* get_variable(VariableTable* table, const char* name) {
+Variable* get_variable(VariableTable* table, const string name) {
   for (int i = 0; i < table->size; i++) {
-    if (strcmp(table->variables[i].name, name) == 0) {
+    if (string__compare(table->variables[i].name, name) == 0) {
       Variable* var = &table->variables[i];
       if (var->value.type == VAR_NAMEREF) {
         Variable* resolved = resolve_nameref(var);
         if (resolved == NULL) {
-          print_error("Failed to resolve nameref");
+          print_error(_SLIT("Failed to resolve nameref"));
           return NULL;
         }
         return resolved;
@@ -154,15 +157,15 @@ Variable* get_variable(VariableTable* table, const char* name) {
   return NULL;
 }
 
-void unset_variable(VariableTable* table, const char* name) {
+void unset_variable(VariableTable* table, const string name) {
   for (int i = 0; i < table->size; i++) {
-    if (strcmp(table->variables[i].name, name) == 0) {
+    if (string__compare(table->variables[i].name, name) == 0) {
       if (is_variable_flag_set(&table->variables[i].flags, VarFlag_ReadOnly)) {
-        print_error("Cannot unset readonly variable");
+        print_error(_SLIT("Cannot unset readonly variable"));
         return;
       }
-      rfree(table->variables[i].name);
-      rfree(table->variables[i].str);
+      string__free(table->variables[i].name);
+      string__free(table->variables[i].str);
       free_va_value(&table->variables[i].value);
       memmove(&table->variables[i], &table->variables[i + 1], (size_t)((table->size - i - 1) * (int)sizeof(Variable)));
       table->size--;
@@ -171,42 +174,43 @@ void unset_variable(VariableTable* table, const char* name) {
   }
 }
 
-void parse_and_set_array(VariableTable* table, const char* name, const char* value) {
-  char* trimmed_value = rstrdup(value + 1);
-  trimmed_value[strlen(trimmed_value) - 1] = '\0';
+void parse_and_set_array(VariableTable* table, const string name, const string value) {
+  string trimmed_value = string__substring(value, 1, (ssize_t)(value.len - 1));
   Variable* var = create_new_variable(table, name, VAR_ARRAY);
 
   char* token;
-  char* rest = trimmed_value;
+  char* rest = trimmed_value.str;
 
   while ((token = strtok_r(rest, " ", &rest)) != NULL) {
-    VariableType type = parse_variable_type(token);
-    va_value_t _value = string_to_va_value(token, type);
+    string stroken = string__new(token);
+    VariableType type = parse_variable_type(stroken);
+    va_value_t _value = string_to_va_value(stroken, type);
     array_push(&var->value._array, &_value);
+    string__free(stroken);
   }
 
-  rfree(trimmed_value);
+  string__free(trimmed_value);
 }
 
-void parse_and_set_associative_array(VariableTable* table, const char* name, const char* input) {
-  if (input == NULL || table == NULL) return;
+void parse_and_set_associative_array(VariableTable* table, const string name, const string input) {
+  if (string__is_null_or_empty(input) || table == NULL) return;
   Variable* var = create_new_variable(table, name, VAR_ASSOCIATIVE_ARRAY);
 
-  if (input[0] != '{' || input[strlen(input) - 1] != '}') {
-    fprintf(stderr, "Invalid input format\n");
+  if (input.str[0] != '{' || input.str[input.len - 1] != '}') {
+    ffprintln(stderr, "Invalid input format");
     return;
   }
 
-  char* trimmed_input = strndup(input + 1, strlen(input) - 2);
+  string trimmed_input = string__substring(input, 1, (ssize_t)(input.len - 1));
 
-  char* token = strtok(trimmed_input, " ");
+  char* token = strtok(trimmed_input.str, " ");
   while (token != NULL) {
     char* equal_sign = strchr(token, '=');
     if (equal_sign != NULL) {
       *equal_sign = '\0';
       if (token[0] != '[') {
-        fprintf(stderr, "Invalid key format\n");
-        free(trimmed_input);
+        ffprintln(stderr, "Invalid key format");
+        string__free(trimmed_input);
         return;
       }
       char* key = token + 1;
@@ -214,23 +218,26 @@ void parse_and_set_associative_array(VariableTable* table, const char* name, con
       char* close_bracket = strchr(key, ']');
       if (close_bracket != NULL)
         *close_bracket = '\0';
-      set_associative_array_variable(table, var->name, key, value);
+      string skey = string__new(key);
+      string svalue = string__new(value);
+      set_associative_array_variable(table, var->name, skey, svalue);
+      string__free(skey);
     }
     token = strtok(NULL, " ");
   }
   
-  free(trimmed_input);
+  string__free(trimmed_input);
 }
 
-void array_set_element(VariableTable* table, const char* name, size_t index, const char* value) {
+void array_set_element(VariableTable* table, const string name, size_t index, const string value) {
   Variable* var = get_variable(table, name);
   if (var == NULL || var->value.type != VAR_ARRAY) {
-    print_error("Variable is not an array");
+    print_error(_SLIT("Variable is not an array"));
     return;
   }
 
   if (index >= var->value._array.size) {
-    print_error("Index out of bounds");
+    print_error(_SLIT("Index out of bounds"));
     return;
   }
 
@@ -239,32 +246,30 @@ void array_set_element(VariableTable* table, const char* name, size_t index, con
   array_index_set(&var->value._array, index, &new_value);
 }
 
-bool do_not_expand_this_builtin(const char* name) {
-  char* do_not_expand[] = {"readonly", "set", "unset", "declare"};
-  for (int i = 0; (unsigned long)i < sizeof(do_not_expand) / sizeof(char*); i++) {
-    if (strcmp(name, do_not_expand[i]) == 0) {
+bool do_not_expand_this_builtin(const string name) {
+  string do_not_expand[] = {_SLIT("readonly"), _SLIT("set"), _SLIT("unset"), _SLIT("declare")};
+  for (int i = 0; (unsigned long)i < sizeof(do_not_expand) / sizeof(string); i++) {
+    if (string__compare(name, do_not_expand[i]) == 0) {
       return true;
     }
   }
   return false;
 }
 
-VariableType parse_variable_type(const char* value) {
-  if (value == NULL || *value == '\0')
+VariableType parse_variable_type(string value) {
+  if (string__is_null_or_empty(value))
     return VAR_STRING;
-  while (isspace(*value)) value++;
-  const char* end = value + strlen(value) - 1;
-  while (end > value && isspace(*end)) end--;
-  end++;
-  if ((value[0] == '"' && end[-1] == '"') || (value[0] == '\'' && end[-1] == '\''))
+  rstring__trim(value);
+  if (string__is_null_or_empty(value))
     return VAR_STRING;
-  char* endptr;
-  strtol(value, &endptr, 10);
-  if (*endptr == '\0')
+  if ((string__startswith(value, _SLIT("\"")) && string__endswith(value, _SLIT("\""))) ||
+      (string__startswith(value, _SLIT("'")) && string__endswith(value, _SLIT("'"))))
+    return VAR_STRING;
+  if (string__isdigit(value))
     return VAR_INTEGER;
-  if (value[0] == '(' && end[-1] == ')')
+  if (string__startswith(value, _SLIT("(")) && string__endswith(value, _SLIT(")")))
     return VAR_ARRAY;
-  if (value[0] == '{' && end[-1] == '}')
+  if (string__startswith(value, _SLIT("{")) && string__endswith(value, _SLIT("}")))
     return VAR_ASSOCIATIVE_ARRAY;
   return VAR_STRING;
 }
@@ -278,12 +283,12 @@ Variable* resolve_nameref(Variable* var) {
   int depth = 0;
   while (resolved != NULL && resolved->value.type == VAR_NAMEREF) {
     if (depth++ > 100) {
-      print_error("Too many levels of indirection");
+      print_error(_SLIT("Too many levels of indirection"));
       return NULL;
     }
     resolved = get_variable(variable_table, resolved->value._str);
     if (resolved == NULL) {
-      print_error("Variable not found");
+      print_error(_SLIT("Variable not found"));
       return NULL;
     }
     if (resolved->value.type != VAR_NAMEREF) break;
@@ -291,111 +296,104 @@ Variable* resolve_nameref(Variable* var) {
   return resolved;
 }
 
-void set_associative_array_variable(VariableTable* table, const char* name, const char* key, const char* value) {
+void set_associative_array_variable(VariableTable* table, const string name, const string key, const string value) {
   Variable* var = get_variable(table, name);
   if (var == NULL) var = create_new_variable(table, name, VAR_ASSOCIATIVE_ARRAY);
 
   if (var->value.type != VAR_ASSOCIATIVE_ARRAY) {
-    print_error("Variable is not an associative array");
+    print_error(_SLIT("Variable is not an associative array"));
     return;
   }
 
   va_value_t outval;
   size_t outval_size;
-  MapResult result = map_get(var->value._map, key, &outval, &outval_size);
+  MapResult result = map_get(var->value._map, key.str, &outval, &outval_size);
   if (!result.is_err) {
     free_va_value(&outval);
   }
 
   VariableType vt = parse_variable_type(value);
   va_value_t new_value = string_to_va_value(value, vt);
-  map_insert(var->value._map, key, &new_value, sizeof(va_value_t));
+  map_insert(var->value._map, key.str, &new_value, sizeof(va_value_t));
 }
 
-char* va_value_to_string(const va_value_t* value) {
-  char* result = NULL;
+string va_value_to_string(const va_value_t* value) {
+  string result = _SLIT0;
   switch (value->type) {
     case VAR_STRING:
-      result = rstrdup(value->_str);
+      result = string__from(value->_str);
       break;
     case VAR_INTEGER:
-      result = rmalloc(32);
-      snprintf(result, 32, "%lld", value->_number);
+      char* temp = rmalloc(32);
+      snprintf(temp, 32, "%lld", value->_number);
+      result = string__new(temp);
+      rfree(temp);
       break;
     case VAR_ARRAY: {
-      size_t total_length = 2;
+      StringBuilder sb = string_builder__new();
+      string_builder__append_char(&sb, '(');
       for (size_t i = 0; i < value->_array.size; ++i) {
         va_value_t element = *(va_value_t*)array_checked_get(value->_array, i);
-        char* element_str = va_value_to_string(&element);
-        total_length += strlen(element_str) + 1;
-        free(element_str);
-      }
-      result = rmalloc(total_length);
-      strcpy(result, "(");
-      for (size_t i = 0; i < value->_array.size; ++i) {
-        va_value_t element = *(va_value_t*)array_checked_get(value->_array, i);
-        char* element_str = va_value_to_string(&element);
-        strcat(result, element_str);
+        string element_str = va_value_to_string(&element);
+        string_builder__append(&sb, element_str);
+        string__free(element_str);
         if (i < value->_array.size - 1)
-          strcat(result, " ");
-        free(element_str);
+          string_builder__append_char(&sb, ' ');
       }
-      strcat(result, ")");
+      string_builder__append_char(&sb, ')');
+      result = string_builder__to_string(&sb);
+      string_builder__free(&sb);
       break;
     }
     case VAR_ASSOCIATIVE_ARRAY: {
-      size_t total_length = 4;
+      StringBuilder sb = string_builder__new();
       MapIterator it = map_iterator(value->_map);
+      string_builder__append_char(&sb, '{');
       while (map_has_next(&it)) {
         const char* key = map_next(&it);
         va_value_t* element = map_iterator_get_value(&it, NULL);
-        char* element_str = va_value_to_string(element);
-        total_length += strlen(key) + strlen(element_str) + 4;
-        free(element_str);
-      }
-      result = rmalloc(total_length);
-      strcpy(result, "{ ");
-      map_iterator_reset(&it);
-      while (map_has_next(&it)) {
-        const char* key = map_next(&it);
-        va_value_t* element = map_iterator_get_value(&it, NULL);
-        char* element_str = va_value_to_string(element);
-        strcat(result, "[");
-        strcat(result, key);
-        strcat(result, "]=");
-        strcat(result, element_str);
+        string element_str = va_value_to_string(element);
+        string_builder__append_char(&sb, '[');
+        string_builder__append_cstr(&sb, key);
+        string_builder__append_char(&sb, ']');
+        string_builder__append_char(&sb, '=');
+        string_builder__append(&sb, element_str);
         if (map_has_next(&it))
-          strcat(result, " ");
-        free(element_str);
+          string_builder__append_char(&sb, ' ');
+        string__free(element_str);
       }
-      strcat(result, " }");
+      string_builder__append_char(&sb, '}');
+      result = string_builder__to_string(&sb);
+      string_builder__free(&sb);
       break;
     }
     default:
-      result = rstrdup("");
+      result = _SLIT0;
       break;
   }
   return result;
 }
 
-va_value_t string_to_va_value(const char* str, VariableType type) {
+va_value_t string_to_va_value(const string str, VariableType type) {
   va_value_t result;
   result.type = type;
   switch (type) {
     case VAR_STRING:
-      result._str = remove_quotes(str);
+      result._str = string__remove_quotes(str);
       break;
     case VAR_INTEGER:
-      result._number = atoll(str);
+      result._number = atoll(str.str);
       break;
     case VAR_ARRAY: {
       result._array = create_array(sizeof(va_value_t));
       char* token;
-      char* rest = rstrdup(str + 1);
+      char* rest = rstrdup(str.str + 1);
       rest[strlen(rest) - 1] = '\0';
       while ((token = strtok_r(rest, " ", &rest))) {
-        VariableType _type = parse_variable_type(token);
-        va_value_t value = string_to_va_value(token, _type);
+        string stroken = string__new(token);
+        VariableType _type = parse_variable_type(stroken);
+        va_value_t value = string_to_va_value(stroken, _type);
+        string__free(stroken);
         array_push(&result._array, &value);
       }
       rfree(rest);
@@ -403,17 +401,17 @@ va_value_t string_to_va_value(const char* str, VariableType type) {
     }
     case VAR_ASSOCIATIVE_ARRAY: {
       result._map = create_map_with_func(vfree_va_value);
-      char* trimmed_input = strndup(str + 1, strlen(str) - 2);
-      char* token = strtok(trimmed_input, " ");
+      string trimmed_input = string__substring(str, 1, (ssize_t)(str.len - 1));
+      char* token = strtok(trimmed_input.str, " ");
       while (token != NULL) {
         char* equal_sign = strchr(token, '=');
         if (equal_sign != NULL) {
           *equal_sign = '\0';
           if (token[0] != '[') {
-            fprintf(stderr, "Invalid key format\n");
-            free(trimmed_input);
+            ffprintln(stderr, "Invalid key format");
+            string__free(trimmed_input);
             result.type = VAR_STRING;
-            result._str = rstrdup("");
+            result._str = _SLIT0;
             break;
           }
           char* key = token + 1;
@@ -421,18 +419,20 @@ va_value_t string_to_va_value(const char* str, VariableType type) {
           char* close_bracket = strchr(key, ']');
           if (close_bracket != NULL)
             *close_bracket = '\0';
-          VariableType vt = parse_variable_type(value);
-          va_value_t new_value = string_to_va_value(value, vt);
+          string svalue = string__new(value);
+          VariableType vt = parse_variable_type(svalue);
+          va_value_t new_value = string_to_va_value(svalue, vt);
           map_insert(result._map, key, &new_value, sizeof(va_value_t));
+          string__free(svalue);
         }
         token = strtok(NULL, " ");
       }
-      free(trimmed_input);
+      string__free(trimmed_input);
       break;
     }
     default:
       result.type = VAR_STRING;
-      result._str = rstrdup("");
+      result._str = _SLIT0;
       break;
   }
   return result;
@@ -442,7 +442,7 @@ void free_va_value(va_value_t* value) {
   if (value == NULL) return;
   switch (value->type) {
     case VAR_STRING:
-      rfree(value->_str);
+      string__free(value->_str);
       break;
     case VAR_ARRAY:
       for (size_t i = 0; i < value->_array.size; i++) {
@@ -456,7 +456,7 @@ void free_va_value(va_value_t* value) {
         map_free(value->_map);
       break;
     case VAR_NAMEREF:
-      rfree(value->_str);
+      string__free(value->_str);
     default:
       break;
   }
@@ -469,8 +469,8 @@ void vfree_va_value(void* value) {
 
 void free_variable(Variable* var) {
   if (var == NULL) return;
-  rfree(var->name);
-  rfree(var->str);
+  string__free(var->name);
+  string__free(var->str);
   free_va_value(&var->value);
   rfree(var);
 }
@@ -479,376 +479,471 @@ void cleanup_variables() {
   free_variable_table(variable_table);
 }
 
-char* expand_variables(VariableTable* table, const char* input) {
-  size_t result_size = 10;
-  size_t result_len = 0;
-  char* result = rmalloc(result_size);
-  const char* p = input;
+string expand_variables(VariableTable* table, const string input) {
+  StringBuilder sb = string_builder__new();
+  ssize_t p = 0;
 
-  while (*p) {
-    if (*p == '$') {
-      if (*(p + 1) == '{') {
-        const char* end = strchr(p + 2, '}');
-        if (end) {
-          size_t var_name_len = (size_t)(end - (p + 2));
-          char* var_name = rmalloc(var_name_len + 1);
-          strncpy(var_name, p + 2, var_name_len);
-          var_name[var_name_len] = '\0';
+  while (p < (ssize_t)input.len) {
+    if (input.str[p] == '$') {
+      if (p + 1 < (ssize_t)input.len && input.str[p + 1] == '{') {
+        ssize_t end;
+        {
+          string temp = string__substring(input, p + 2);
+          end = string__indexof(temp, _SLIT("}"));
+          string__free(temp);
+        }
+        if (end != -1) {
+          end += p + 2; 
+          string var_name = string__substring(input, p + 2, end);
 
-          char* open_bracket = strchr(var_name, '[');
-          char* close_bracket = strrchr(var_name, ']');
-          char* colon = strchr(var_name, ':');
-          char* hash = strchr(var_name, '#');
-          char* slash = strchr(var_name, '/');
-          char* percent = strchr(var_name, '%');
-          char* question = strchr(var_name, '?');
-          char* exclamation = strchr(var_name, '!');
-          char* caret = strchr(var_name, '^');
-          char* comma = strchr(var_name, ',');
-          char* at = strchr(var_name, '@');
+          string open_bracket = _SLIT("[");
+          string close_bracket = _SLIT("]");
+          string colon = _SLIT(":");
+          string hash = _SLIT("#");
+          string slash = _SLIT("/");
+          string percent = _SLIT("%");
+          string question = _SLIT("?");
+          string exclamation = _SLIT("!");
+          string caret = _SLIT("^");
+          string comma = _SLIT(",");
+          string at = _SLIT("@");
 
-          if (open_bracket && close_bracket && open_bracket < close_bracket) {
-            *open_bracket = '\0';
-            *close_bracket = '\0';
-            char* key = open_bracket + 1;
+          ssize_t open_bracket_pos = string__indexof(var_name, open_bracket);
+          ssize_t close_bracket_pos = string__lastindexof(var_name, close_bracket);
+          ssize_t colon_pos = string__indexof(var_name, colon);
+          ssize_t hash_pos = string__indexof(var_name, hash);
+          ssize_t slash_pos = string__indexof(var_name, slash);
+          ssize_t percent_pos = string__indexof(var_name, percent);
+          ssize_t question_pos = string__indexof(var_name, question);
+          ssize_t exclamation_pos = string__indexof(var_name, exclamation);
+          ssize_t caret_pos = string__indexof(var_name, caret);
+          ssize_t comma_pos = string__indexof(var_name, comma);
+          ssize_t at_pos = string__indexof(var_name, at);
 
-            Variable* var = get_variable(table, var_name);
+          if (open_bracket_pos != -1 && close_bracket_pos != -1 && open_bracket_pos < close_bracket_pos) {
+            string name = string__substring(var_name, 0, open_bracket_pos);
+            string key = string__substring(var_name, open_bracket_pos + 1, close_bracket_pos);
+
+            Variable* var = get_variable(table, name);
             if (var && var->value.type == VAR_ASSOCIATIVE_ARRAY) {
               va_value_t value;
               size_t value_size;
-              MapResult map_result = map_get(var->value._map, key, &value, &value_size);
+              MapResult map_result = map_get(var->value._map, key.str, &value, &value_size);
               if (!map_result.is_err) {
-                char* str_value = va_value_to_string(&value);
-                dynstrcpy(&result, &result_size, &result_len, str_value);
-                rfree(str_value);
+                string str_value = va_value_to_string(&value);
+                string_builder__append(&sb, str_value);
+                string__free(str_value);
               }
             } else if (var && var->value.type == VAR_ARRAY) {
               long long index;
               StrconvResult sres = ratoll(key, &index);
-              if (sres.is_err) {
-                print_error("Invalid key for associative array");
-                return NULL;
-              }
-              if (index >= 0 && index < (long long)var->value._array.size) {
-                va_value_t* value = array_checked_get(var->value._array, (size_t)index);
-                char* str_value = va_value_to_string(value);
-                dynstrcpy(&result, &result_size, &result_len, str_value);
-                rfree(str_value);
+              if (!sres.is_err) {
+                if (index >= 0 && index < (long long)var->value._array.size) {
+                  va_value_t* value = array_checked_get(var->value._array, (size_t)index);
+                  string str_value = va_value_to_string(value);
+                  string_builder__append(&sb, str_value);
+                  string__free(str_value);
+                }
               }
             }
-          } else if (hash) {
-            if (*var_name == '#') {
-              const char* vname = hash + 1;
+            string__free(name);
+            string__free(key);
+          } else if (hash_pos != -1) {
+            if (var_name.str[0] == '#') {
+              string vname = string__substring(var_name, hash_pos + 1);
               Variable* var = get_variable(table, vname);
+              string__free(vname);
               if (var) {
-                size_t length = strlen(var->str);
+                size_t length = string__length(var->str);
                 char length_str[20];
-                snprintf(length_str, sizeof(length_str), "%ld", length);
-                dynstrcpy(&result, &result_size, &result_len, length_str);
+                snprintf(length_str, sizeof(length_str), "%zu", length);
+                string_builder__append_cstr(&sb, length_str);
               }
             } else {
-              char* position = strchr(var_name, '#');
-              char* pattern_start = rstrdup(position+1);
-              var_name[position - var_name] = '\0';
+              string prefix = string__substring(var_name, 0, hash_pos);
+              string pattern = string__substring(var_name, hash_pos + 1);
               
-              if (pattern_start) {
-                bool is_longest_match = (*(pattern_start) == '#');
-                const char* pattern = pattern_start + (is_longest_match ? 1 : 0);
-                
-                Variable* var = get_variable(table, var_name);
-                if (var) {
-                  char* value = rstrdup(var->str);
-                  char* new_value = remove_prefix(value, pattern, is_longest_match);
-
-                  dynstrcpy(&result, &result_size, &result_len, new_value);
-
-                  rfree(value);
-                  rfree(new_value);
-                }
+              bool is_longest_match = (pattern.str[0] == '#');
+              if (is_longest_match) {
+                pattern = string__substring(pattern, 1);
+              }
+              
+              Variable* var = get_variable(table, prefix);
+              if (var) {
+                string value = string__from(var->str);
+                string new_value = string__remove_prefix(value, pattern, is_longest_match);
+                string_builder__append(&sb, new_value);
+                string__free(value);
+                string__free(new_value);
               }
             }
-          } else if (exclamation) {
-            char* indirect_var_name = var_name + 1;
-            size_t indirect_var_name_len = strlen(indirect_var_name);
-            if (indirect_var_name[indirect_var_name_len - 1] == '*' || indirect_var_name[indirect_var_name_len - 1] == '@') {
-              indirect_var_name[indirect_var_name_len - 1] = '\0';
-              for (int i = 0; i < table->size; i++) {
-                if (strncmp(table->variables[i].name, indirect_var_name, strlen(indirect_var_name)) == 0) {
-                  dynstrcpy(&result, &result_size, &result_len, table->variables[i].name);
-                  dynstrcpy(&result, &result_size, &result_len, " ");
-                }
+          } else if (exclamation_pos != -1) {
+            string indirect_var_name = string__substring(var_name, 1);
+            if (indirect_var_name.str[indirect_var_name.len - 1] == '*' || indirect_var_name.str[indirect_var_name.len - 1] == '@') {
+              {
+                string temp = string__substring(indirect_var_name, 0, (ssize_t)indirect_var_name.len - 1);
+                string__free(indirect_var_name);
+                indirect_var_name = temp;
               }
-              if (result_len > 0 && result[result_len - 1] == ' ')
-                result_len--;
+              for (int i = 0; i < table->size; i++) {
+                string temp = string__from(table->variables[i].name);
+                if (string__startswith(temp, indirect_var_name)) {
+                  string_builder__append(&sb, temp);
+                  string_builder__append_char(&sb, ' ');
+                }
+                string__free(temp);
+              }
+              if (sb.len > 0 && sb.buffer[sb.len - 1] == ' ') {
+                sb.len--;
+              }
             } else {
               Variable* indirect_var = get_variable(table, indirect_var_name);
               if (indirect_var) {
                 Variable* target_var = get_variable(table, indirect_var->str);
                 if (target_var) {
-                  dynstrcpy(&result, &result_size, &result_len, target_var->str);
+                  string_builder__append(&sb, target_var->str);
                 }
               }
             }
-          } else if (caret) {
-            *caret = '\0';
-            Variable* var = get_variable(table, var_name);
+            string__free(indirect_var_name);
+          } else if (caret_pos != -1) {
+            string name = string__substring(var_name, 0, caret_pos);
+            string pattern = string__substring(var_name, caret_pos);
+            Variable* var = get_variable(table, name);
+            string__free(name);
             if (var) {
-              char* value = rstrdup(var->str);
-              char* pattern = (*(caret + 1) == '^') ? caret + 2 : caret + 1;
-              bool convert_all = (*(caret + 1) == '^');
-              
-              if (*pattern == '\0') {
-                for (char* c = value; *c; c++) {
-                  if (convert_all || c == value) {
-                    *c = (char)toupper(*c);
-                  }
-                }
+              string value = string__from(var->str);
+              bool convert_all = (pattern.str[0] == '^' && pattern.len > 1 && pattern.str[1] == '^');
+              {
+                string temp = string__substring(pattern, (convert_all) ? 2 : 1);
+                string__free(pattern);
+                pattern = temp;
+              }
+        
+              if (pattern.len == 0) {
+                for (size_t i = 0; i < value.len; i++)
+                  if (convert_all || (!convert_all && i == 0)) value.str[i] = (char)toupper(value.str[i]);
               } else {
-                for (char* c = value; *c; c++) {
-                  if (strchr(pattern, *c) != NULL) {
-                    if (convert_all || c == value) {
-                      *c = (char)toupper(*c);
+                bool first_found = false;
+                for (size_t i = 0; i < value.len; i++) {
+                  string temp = string__substring(value, (ssize_t)i, (ssize_t)i+1);
+                  if (string__contains(pattern, temp)) {
+                    if (convert_all || (!convert_all && !first_found)) {
+                      value.str[i] = (char)toupper(value.str[i]);
+                      if (!first_found) first_found = true;
                     }
                   }
+                  string__free(temp);
                 }
               }
-              dynstrcpy(&result, &result_size, &result_len, value);
-              rfree(value);
+              string_builder__append(&sb, value);
+              string__free(value);
             }
-          } else if (comma) {
-            *comma = '\0';
-            Variable* var = get_variable(table, var_name);
+            string__free(pattern);
+          } else if (comma_pos != -1) {
+            string name = string__substring(var_name, 0, comma_pos);
+            string pattern = string__substring(var_name, comma_pos);
+            Variable* var = get_variable(table, name);
+            string__free(name);
             if (var) {
-              char* value = rstrdup(var->str);
-              if (*(comma + 1) == ',') {
-                for (char* c = value; *c; c++) {
-                  *c = (char)tolower(*c);
-                }
+              string value = string__from(var->str);
+              bool convert_all = (pattern.str[0] == ',' && pattern.len > 1 && pattern.str[1] == ',');
+              {
+                string temp = string__substring(pattern, (convert_all) ? 2 : 1);
+                string__free(pattern);
+                pattern = temp;
+              }
+        
+              if (pattern.len == 0) {
+                for (size_t i = 0; i < value.len; i++)
+                  if (convert_all || (!convert_all && i == 0)) value.str[i] = (char)tolower(value.str[i]);
               } else {
-                *value = (char)tolower(*value);
+                bool first_found = false;
+                for (size_t i = 0; i < value.len; i++) {
+                  string temp = string__substring(value, (ssize_t)i, (ssize_t)i+1);
+                  if (string__contains(pattern, temp)) {
+                    if (convert_all || (!convert_all && !first_found)) {
+                      value.str[i] = (char)tolower(value.str[i]);
+                      if (!first_found) first_found = true;
+                    }
+                  }
+                  string__free(temp);
+                }
               }
-              dynstrcpy(&result, &result_size, &result_len, value);
-              rfree(value);
+              string_builder__append(&sb, value);
+              string__free(value);
             }
-          } else if (colon) {
-            *colon = '\0';
-            Variable* var = get_variable(table, var_name);
+            string__free(pattern);
+          } else if (colon_pos != -1 && !(var_name.str[colon_pos + 1] == '?' || var_name.str[colon_pos + 1] == '-' || var_name.str[colon_pos + 1] == '=' || var_name.str[colon_pos + 1] == '+')) {
+            string name = string__substring(var_name, 0, colon_pos);
+            string offset_str = string__substring(var_name, colon_pos + 1);
+            Variable* var = get_variable(table, name);
+            string__free(name);
             if (var) {
+              long offset;
               char* endptr;
-              long offset = strtol(colon + 1, &endptr, 10);
-              char* length_str = (*endptr == ':') ? endptr + 1 : NULL;
+              offset = strtol(offset_str.str, &endptr, 10);
+              string _endptr = string__new(endptr);
+              string length_str = (endptr[0] == ':') ? string__substring(_endptr, 1) : _SLIT0;
+              string__free(_endptr);
 
-              size_t var_len = strlen(var->str);
+              size_t var_len = string__length(var->str);
               
               if (offset < 0) {
                 offset = (long)var_len + offset;
               }
 
-              if (length_str) {
-                long length = strtol(length_str, NULL, 10);
+              if (length_str.len > 0) {
+                long length = strtol(length_str.str, NULL, 10);
                 if (offset >= 0 && length > 0 && offset + length <= (long)var_len) {
-                  char* temp = rmalloc((size_t)length + 1);
-                  strncpy(temp, var->str + offset, (size_t)length);
-                  temp[length] = '\0';
-                  dynstrcpy(&result, &result_size, &result_len, temp);
-                  rfree(temp);
+                  string temp = string__substring(var->str, offset, offset + length);
+                  string_builder__append(&sb, temp);
+                  string__free(temp);
                 }
               } else {
                 if (offset >= 0 && offset < (long)var_len) {
-                  dynstrcpy(&result, &result_size, &result_len, var->str + offset);
+                  string temp = string__substring(var->str, offset);
+                  string_builder__append(&sb, temp);
+                  string__free(temp);
                 }
               }
+              string__free(length_str);
             }
-          } else if (at) {
-            *at = '\0';
-            Variable* var = get_variable(table, var_name);
+            string__free(offset_str);
+          } else if (at_pos != -1) {
+            string name = string__substring(var_name, 0, at_pos);
+            Variable* var = get_variable(table, name);
+            string__free(name);
             if (var) {
-              if (*(at + 1) == 'Q') {
-                dynstrcpy(&result, &result_size, &result_len, "'");
-                for (char* c = var->str; *c; c++) {
-                  if (*c == '\'') {
-                    dynstrcpy(&result, &result_size, &result_len, "'\\''");
+              if (var_name.str[at_pos + 1] == 'Q') {
+                string_builder__append_char(&sb, '\'');
+                for (size_t i = 0; i < var->str.len; i++) {
+                  if (var->str.str[i] == '\'') {
+                    string_builder__append_cstr(&sb, "'\\''");
                   } else {
-                    char temp[2] = {*c, '\0'};
-                    dynstrcpy(&result, &result_size, &result_len, temp);
+                    string_builder__append_char(&sb, var->str.str[i]);
                   }
                 }
-                dynstrcpy(&result, &result_size, &result_len, "'");
-              } else if (*(at + 1) == 'E') {
-                int temp = parse_and_execute(var->str);
-                char exit_status[20];
-                snprintf(exit_status, sizeof(exit_status), "%d", temp);
-                dynstrcpy(&result, &result_size, &result_len, exit_status);
+                string_builder__append_char(&sb, '\'');
+              } else if (var_name.str[at_pos + 1] == 'E') {
+                print_error(_SLIT("Not implemented"));
               }
             }
-          } else if (colon && (*(colon + 1) == '-' || *(colon + 1) == '=' || *(colon + 1) == '+')) {
-            *colon = '\0';
-            char* value = colon + 2;
-            char operation = *(colon + 1);
+          } else if (colon_pos != -1 && (var_name.str[colon_pos + 1] == '-' || var_name.str[colon_pos + 1] == '=' || var_name.str[colon_pos + 1] == '+')) {
+            string name = string__substring(var_name, 0, colon_pos);
+            string value = string__substring(var_name, colon_pos + 2);
+            char operation = var_name.str[colon_pos + 1];
 
-            Variable* var = get_variable(table, var_name);
+            Variable* var = get_variable(table, name);
             if (operation == '+') {
-              if (var && var->str && strlen(var->str) > 0) {
-                dynstrcpy(&result, &result_size, &result_len, value);
+              if (var && var->str.len > 0) {
+                string_builder__append(&sb, value);
               }
             } else {
-              if (!var || !var->str || strlen(var->str) == 0) {
+              if (!var || var->str.len == 0) {
                 if (operation == '=') {
-                  var = set_variable(table, var_name, value, parse_variable_type(value), false);
+                  var = set_variable(table, name, value, parse_variable_type(value), false);
+                  string__free(value);
+                  value = string__from(var->str);
                 }
-                dynstrcpy(&result, &result_size, &result_len, value);
+                string_builder__append(&sb, value);
               } else {
-                dynstrcpy(&result, &result_size, &result_len, var->str);
+                string_builder__append(&sb, var->str);
               }
             }
-          } else if (question) {
-            *question = '\0';
-            char* error_message = question + 1;
+            string__free(name);
+            string__free(value);
+          } else if (question_pos != -1) {
+            string name = string__substring(var_name, 0, question_pos);
+            string error_message = string__substring(var_name, question_pos + 1);
 
-            Variable* var = get_variable(table, var_name);
-            if (!var || !var->str || strlen(var->str) == 0) {
-              print_error(error_message);
+            Variable* var = get_variable(table, name);
+            if (!var || var->str.len == 0) {
+              string_builder__append(&sb, _SLIT("ERROR: "));
+              string_builder__append(&sb, error_message);
             } else {
-              dynstrcpy(&result, &result_size, &result_len, var->str);
+              string_builder__append(&sb, var->str);
             }
-          } else if (slash) {
-            *slash = '\0';
-            char* pattern = slash + 1;
-            bool replace_all = (*pattern == '/');
-            if (replace_all) pattern++;
+            string__free(name);
+            string__free(error_message);
+          } else if (slash_pos != -1) {
+            string name = string__substring(var_name, 0, slash_pos);
+            string pattern = string__substring(var_name, slash_pos + 1);
+            bool replace_all = (pattern.str[0] == '/');
+            if (replace_all) {
+              string temp = string__substring(pattern, 1);
+              string__free(pattern);
+              pattern = temp;
+            }
             
-            char* replacement = strchr(pattern, '/');
-            Variable* var = get_variable(table, var_name);
-            if (replacement) {
-              *replacement = '\0';
-              replacement++;
+            ssize_t replacement_pos = string__indexof(pattern, slash);
+            Variable* var = get_variable(table, name);
+            string__free(name);
+            if (replacement_pos != -1) {
+              string replacement = string__substring(pattern, replacement_pos + 1);
+              {
+                string temp = string__substring(pattern, 0, replacement_pos);
+                string__free(pattern);
+                pattern = temp;
+              }
               
               if (var) {
-                char* new_value = str_replace(var->str, pattern, replacement, replace_all);
-                dynstrcpy(&result, &result_size, &result_len, new_value);
-                rfree(new_value);
+                string new_value = string__replace_all(var->str, pattern, replacement);
+                if (!replace_all) {
+                  string temp = string__replace(var->str, pattern, replacement);
+                  string__free(new_value);
+                  new_value = temp;
+                }
+                string_builder__append(&sb, new_value);
+                string__free(new_value);
               }
+              string__free(replacement);
             } else {
               if (var) {
-                char* temp_result = rstrdup(var->str);
-                char* pos = temp_result;
-                while ((pos = strstr(pos, pattern)) != NULL) {
-                  memmove(pos, pos + strlen(pattern), strlen(pos + strlen(pattern)) + 1);
+                string temp_result = string__from(var->str);
+                while (true) {
+                  ssize_t pos = string__indexof(temp_result, pattern);
+                  if (pos == -1) break;
+                  string before = string__substring(temp_result, 0, pos);
+                  string after = string__substring(temp_result, pos + (ssize_t)pattern.len);
+                  string_builder__clear(&sb);
+                  string_builder__append(&sb, before);
+                  string_builder__append(&sb, after);
+                  string__free(before);
+                  string__free(after);
+                  string__free(temp_result);
+                  temp_result = string_builder__to_string(&sb);
+                  string_builder__clear(&sb);
                   if (!replace_all) break;
                 }
-                
-                dynstrcpy(&result, &result_size, &result_len, temp_result);
-                rfree(result);
+                string_builder__append(&sb, temp_result);
+                string__free(temp_result);
               }
             }
-          } else if (percent) {
-            *percent = '\0';
-            char* pattern = percent + 1;
-            Variable* var = get_variable(table, var_name);
+            string__free(pattern);
+          } else if (percent_pos != -1) {
+            string name = string__substring(var_name, 0, percent_pos);
+            string pattern = string__substring(var_name, percent_pos + 1);
+            Variable* var = get_variable(table, name);
             if (var) {
-              bool greedy = (*(percent + 1) == '%');
-              if (greedy) pattern++;
-              char* new_value = remove_suffix(var->str, pattern, greedy);
-              dynstrcpy(&result, &result_size, &result_len, new_value);
-              rfree(new_value);
+              bool greedy = (pattern.str[0] == '%');
+              if (greedy) {
+                string new_pattern = string__substring(pattern, 1);
+                string__free(pattern);
+                pattern = new_pattern;
+              }
+              string new_value = string__remove_suffix(var->str, pattern, greedy);
+              string_builder__append(&sb, new_value);
+              string__free(new_value);
             }
+            string__free(name);
+            string__free(pattern);
           } else {
             Variable* var = get_variable(table, var_name);
             if (var) {
-              dynstrcpy(&result, &result_size, &result_len, var->str);
+              string_builder__append(&sb, var->str);
             }
           }
-          rfree(var_name);
           p = end + 1;
+          string__free(var_name);
           continue;
         }
-      } else if (*(p + 1) == '?') {
+      } else if (p + 1 < (ssize_t)input.len && input.str[p + 1] == '?') {
         char exit_status[20];
         snprintf(exit_status, sizeof(exit_status), "%d", WEXITSTATUS(system(NULL)));
-        dynstrcpy(&result, &result_size, &result_len, exit_status);
+        string_builder__append_cstr(&sb, exit_status);
         p += 2;
         continue;
-      } else if (*(p + 1) == '!') {
-        dynstrcpy(&result, &result_size, &result_len, "LAST_BG_PID");
+      } else if (p + 1 < (ssize_t)input.len && input.str[p + 1] == '!') {
+        string_builder__append_cstr(&sb, "LAST_BG_PID");
         p += 2;
         continue;
-      } else if (isalpha(*(p + 1)) || *(p + 1) == '_') {
-        const char* var_start = p + 1;
-        const char* var_end = var_start;
-        while (isalnum(*var_end) || *var_end == '_') var_end++;
+      } else if (p + 1 < (ssize_t)input.len && (isalpha(input.str[p + 1]) || input.str[p + 1] == '_')) {
+        ssize_t var_start = p + 1;
+        ssize_t var_end = var_start;
+        while (var_end < (ssize_t)input.len && (isalnum(input.str[var_end]) || input.str[var_end] == '_')) var_end++;
         
-        const char* var_nv = var_end;
-        size_t var_name_len = (size_t)(var_end - var_start);
-        char* var_name = rmalloc(var_name_len + 1);
-        strncpy(var_name, var_start, var_name_len);
-        var_name[var_name_len] = '\0';
+        string var_name = string__substring(input, var_start, var_end);
 
         Variable* var = get_variable(table, var_name);
         if (var) {
           if (var->value.type == VAR_ARRAY || var->value.type == VAR_ASSOCIATIVE_ARRAY) {
-            const char* array_index_start = strchr(var_nv, '[');
-            if (array_index_start) {
-              const char* array_index_end = strchr(array_index_start, ']');
-              if (array_index_end) {
-                size_t index_len = (size_t)(array_index_end - array_index_start - 1);
-                char* temp = rmalloc(index_len + 1);
-                strncpy(temp, array_index_start + 1, index_len);
-                temp[index_len] = '\0';
-                char* index_str = expand_variables(table, temp);
-                rfree(temp);
+            ssize_t array_index_start;
+            {
+              string temp = string__substring(input, var_end);
+              array_index_start = string__indexof(temp, _SLIT("["));
+              string__free(temp);
+            }
+            if (array_index_start != -1) {
+              array_index_start += var_end;
+              ssize_t array_index_end;
+              {
+                string temp = string__substring(input, array_index_start);
+                array_index_end = string__indexof(temp, _SLIT("]"));
+                string__free(temp);
+              }
+              if (array_index_end != -1) {
+                array_index_end += array_index_start;
+                string index_str = string__substring(input, array_index_start + 1, array_index_end);
+                string expanded_index = expand_variables(table, index_str);
+                string__free(index_str);
 
                 switch (var->value.type) {
                   case VAR_ARRAY: {
                     long long index;
-                    StrconvResult sres = ratoll(index_str, &index);
+                    StrconvResult sres = ratoll(expanded_index, &index);
                     if (!sres.is_err && index >= 0 && index < (long long)var->value._array.size) {
                       va_value_t* value = array_checked_get(var->value._array, (size_t)index);
-                      char* str_value = va_value_to_string(value);
-                      dynstrcpy(&result, &result_size, &result_len, str_value);
-                      rfree(str_value);
+                      string str_value = va_value_to_string(value);
+                      string_builder__append(&sb, str_value);
+                      string__free(str_value);
                     }
                     break;
                   }
                   case VAR_ASSOCIATIVE_ARRAY: {
                     va_value_t value;
                     size_t value_size;
-                    MapResult map_result = map_get(var->value._map, index_str, &value, &value_size);
+                    MapResult map_result = map_get(var->value._map, expanded_index.str, &value, &value_size);
                     if (!map_result.is_err) {
-                      char* str_value = va_value_to_string(&value);
-                      dynstrcpy(&result, &result_size, &result_len, str_value);
-                      rfree(str_value);
+                      string str_value = va_value_to_string(&value);
+                      string_builder__append(&sb, str_value);
+                      string__free(str_value);
                     }
                     break;
                   }
                   default:
                     break;
                 }
-                rfree(index_str);
+                string__free(expanded_index);
+                p = array_index_end + 1;
+              } else {
+                p = var_end;
               }
-              p = array_index_end + 1;
             } else {
-              char* value = va_value_to_string(&var->value);
-              dynstrcpy(&result, &result_size, &result_len, value);
-              rfree(value);
+              string value = va_value_to_string(&var->value);
+              string_builder__append(&sb, value);
+              string__free(value);
+              p = var_end;
             }
           } else {
-            char* value = va_value_to_string(&var->value);
-            dynstrcpy(&result, &result_size, &result_len, value);
-            rfree(value);
+            string value = va_value_to_string(&var->value);
+            string_builder__append(&sb, value);
+            string__free(value);
+            p = var_end;
           }
         } else {
-          dynstrcpy(&result, &result_size, &result_len, "");
+          p = var_end;
         }
-        rfree(var_name);
-        p = (p > var_end) ? p : var_end;
+        string__free(var_name);
         continue;
       }
     }
-    char temp[2] = {*p, '\0'};
-    dynstrcpy(&result, &result_size, &result_len, temp);
+    string_builder__append_char(&sb, input.str[p]);
     p++;
   }
 
+  string result = string_builder__to_string(&sb);
+  string_builder__free(&sb);
   return result;
 }
 

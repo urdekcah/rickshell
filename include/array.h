@@ -14,6 +14,8 @@ typedef struct {
   ArrayFlag flags;
 } array;
 
+typedef array StringArray;
+
 void array_set_flag(array* a, ArrayFlag flag);
 void array_clear_flag(array* a, ArrayFlag flag);
 int array_has_flag(array* a, ArrayFlag flag);

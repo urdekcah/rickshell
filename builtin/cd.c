@@ -5,9 +5,13 @@
 #include <errno.h>
 #include <limits.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include "builtin.h"
 #include "expr.h"
 #include "error.h"
+#include "rstring.h"
+#include "array.h"
+#include "io.h"
 
 static char old_pwd[4096] = {0};
 
@@ -18,7 +22,7 @@ static int change_dir(const char *dir, int follow_symlinks, int exit_on_error, i
   if (!follow_symlinks) {
     if (chdir(dir) != 0) {
       if (exit_on_error) {
-        fprintf(stderr, "cd: error changing directory: %s\n", strerror(errno));
+        ffprintln(stderr, "cd: error changing directory: %s", strerror(errno));
         exit(1);
       }
       return -1;
@@ -27,14 +31,14 @@ static int change_dir(const char *dir, int follow_symlinks, int exit_on_error, i
     real_path = realpath(dir, resolved_path);
     if (real_path == NULL) {
       if (exit_on_error) {
-        fprintf(stderr, "cd: error resolving path: %s\n", strerror(errno));
+        ffprintln(stderr, "cd: error resolving path: %s", strerror(errno));
         exit(1);
       }
       return -1;
     }
     if (chdir(real_path) != 0) {
       if (exit_on_error) {
-        fprintf(stderr, "cd: error changing directory: %s\n", strerror(errno));
+        ffprintln(stderr, "cd: error changing directory: %s", strerror(errno));
         exit(1);
       }
       return -1;
@@ -44,7 +48,7 @@ static int change_dir(const char *dir, int follow_symlinks, int exit_on_error, i
   char *new_pwd = getcwd(NULL, 0);
   if (new_pwd == NULL) {
     if (exit_on_error) {
-      fprintf(stderr, "cd: error getting current directory: %s\n", strerror(errno));
+      ffprintln(stderr, "cd: error getting current directory: %s", strerror(errno));
       exit(1);
     }
     return -1;
@@ -59,7 +63,7 @@ static int change_dir(const char *dir, int follow_symlinks, int exit_on_error, i
   setenv("PWD", new_pwd, 1);
   
   if (print_new_dir) {
-    printf("%s\n", new_pwd);
+    fprintln("%s", new_pwd);
   }
   
   free(new_pwd);
@@ -100,68 +104,69 @@ int builtin_cd(Command *cmd) {
   int exit_on_error = 0;
   int extended_attributes = 0;
   int print_new_dir = 0;
-  const char *dir = NULL;
+  string dir = _SLIT0;
 
   for (size_t i = 1; i < cmd->argv.size; i++) {
-    if (strcmp(cmd->argv.data[i], "-L") == 0) {
+    string elem = *(string*)array_get(cmd->argv, i);
+    if (string__compare(elem, _SLIT("-L")) == 0) {
       follow_symlinks = 1;
       physical = 0;
-    } else if (strcmp(cmd->argv.data[i], "-P") == 0) {
+    } else if (string__compare(elem, _SLIT("-P")) == 0) {
       follow_symlinks = 0;
       physical = 1;
-    } else if (strcmp(cmd->argv.data[i], "-e") == 0) {
+    } else if (string__compare(elem, _SLIT("-e")) == 0) {
       exit_on_error = 1;
-    } else if (strcmp(cmd->argv.data[i], "-@") == 0) {
+    } else if (string__compare(elem, _SLIT("-@")) == 0) {
       extended_attributes = 1;
-    } else if (strcmp(cmd->argv.data[i], "-") == 0) {
+    } else if (string__compare(elem, _SLIT("-")) == 0) {
       if (old_pwd[0] == '\0') {
-        fprintf(stderr, "cd: OLDPWD not set\n");
+        ffprintln(stderr, "cd: OLDPWD not set");
         return 1;
       }
-      dir = old_pwd;
+      dir = string__new(old_pwd);
       print_new_dir = 1;
-    } else if (cmd->argv.data[i][0] != '-') {
-      dir = cmd->argv.data[i];
+    } else if (elem.str[0] != '-') {
+      dir = elem;
       break;
     } else {
-      fprintf(stderr, "cd: invalid option: %s\n", cmd->argv.data[i]);
-      fprintf(stderr, "Usage: cd [-L|-P] [-e] [-@] [dir]\n");
+      ffprintln(stderr, "cd: invalid option: %s", elem.str);
+      ffprintln(stderr, "Usage: cd [-L|-P] [-e] [-@] [dir]");
       return 1;
     }
   }
   (void)physical;
 
-  if (dir == NULL) {
-    dir = getenv("HOME");
-    if (dir == NULL) {
-      fprintf(stderr, "cd: HOME not set\n");
+  if (string__is_null_or_empty(dir)) {
+    dir = string__new(getenv("HOME"));
+    if (string__is_null_or_empty(dir)) {
+      ffprintln(stderr, "cd: HOME not set");
       return 1;
     }
   }
 
-  if (dir[0] != '/' && strchr(dir, '/') == NULL) {
-    char *cdpath_result = find_cd_path(dir);
+  if (dir.str[0] != '/' && string__indexof(dir, _SLIT("/")) == -1) {
+    char *cdpath_result = find_cd_path(dir.str);
     if (cdpath_result != NULL) {
-      dir = cdpath_result;
+      dir = string__new(cdpath_result);
       print_new_dir = 1;
     } else {
-      char *var_value = getenv(dir);
-      if (var_value != NULL) {
-        dir = var_value;
+      const char* env_var_value = getenv(dir.str);
+      if (env_var_value != NULL) {
+        dir = string__new(env_var_value);
       }
     }
   }
 
   if (extended_attributes) {
     struct stat st;
-    if (lstat(dir, &st) == 0 && S_ISREG(st.st_mode)) {
-      fprintf(stderr, "cd: %s: Not a directory (but has extended attributes)\n", dir);
+    if (lstat(dir.str, &st) == 0 && S_ISREG(st.st_mode)) {
+      ffprintln(stderr, "cd: %S: Not a directory (but has extended attributes)", dir);
       return 1;
     }
   }
 
-  if (change_dir(dir, follow_symlinks, exit_on_error, print_new_dir) != 0) {
-    fprintf(stderr, "cd: %s: %s\n", dir, strerror(errno));
+  if (change_dir(dir.str, follow_symlinks, exit_on_error, print_new_dir) != 0) {
+    ffprintln(stderr, "cd: %S: %s", dir, strerror(errno));
     return 1;
   }
 

@@ -4,15 +4,13 @@
 #include <sys/resource.h>
 #include <stdbool.h>
 #include "rick.h"
+#include "rstring.h"
+#include "array.h"
 
 #define MAX_REDIRECTS 10
 
 typedef struct Command {
-  struct {
-    char** data;
-    size_t capacity;
-    size_t size;
-  } argv;
+  StringArray argv;
   struct {
     Redirect* data;
     size_t capacity;
@@ -33,8 +31,8 @@ typedef struct CommandList {
 } CommandList;
 
 Command* create_command(void);
-bool add_argument(Command* cmd, const char* arg);
-bool add_redirect(Command* cmd, RedirectType type, int fd, const char* target);
+bool add_argument(Command* cmd, const string arg);
+bool add_redirect(Command* cmd, RedirectType type, int fd, const string target);
 bool add_pipeline(Command* cmd, Command* next);
 CommandList* create_command_list(void);
 bool add_command(CommandList* list, Command* cmd);

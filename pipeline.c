@@ -3,8 +3,11 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include "expr.h"
+#include "execute.h"
 #include "redirect.h"
 #include "pipeline.h"
+#include "rstring.h"
+#include "array.h"
 
 int execute_pipeline(Command* first_cmd) {
   int pipefd[2], status = 0;
@@ -31,7 +34,7 @@ int execute_pipeline(Command* first_cmd) {
       if (handle_redirection(cmd) == -1) {
         exit(1);
       }
-      execvp(cmd->argv.data[0], cmd->argv.data);
+      rexecvp(*(string*)array_checked_get(cmd->argv, 0), cmd->argv);
       perror("execvp failed in pipeline");
       exit(1);
     } else if (pid > 0) {
@@ -57,7 +60,7 @@ int execute_pipeline(Command* first_cmd) {
       if (handle_redirection(cmd) == -1) {
         exit(1);
       }
-      execvp(cmd->argv.data[0], cmd->argv.data);
+      rexecvp(*(string*)array_checked_get(cmd->argv, 0), cmd->argv);
       perror("execvp failed in pipeline");
       exit(1);
     } else if (pid > 0) {
