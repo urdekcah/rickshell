@@ -247,7 +247,7 @@ void array_set_element(VariableTable* table, const string name, size_t index, co
 }
 
 bool do_not_expand_this_builtin(const string name) {
-  string do_not_expand[] = {_SLIT("readonly"), _SLIT("set"), _SLIT("unset"), _SLIT("declare")};
+  string do_not_expand[] = {_SLIT("declare"), _SLIT("export"), _SLIT("readonly"), _SLIT("set"), _SLIT("unset")};
   for (int i = 0; (unsigned long)i < sizeof(do_not_expand) / sizeof(string); i++) {
     if (string__compare(name, do_not_expand[i]) == 0) {
       return true;

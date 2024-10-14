@@ -96,7 +96,6 @@ int builtin_declare(Command *cmd) {
       if (set_export) ((unset_mode)?unset_variable_flag:set_variable_flag)(&var->flags, VarFlag_Exported);
       process_exported_variable(var);
       string__free(name);
-      string__free(value);
     }
   }
 
