@@ -67,7 +67,7 @@ int builtin_readonly(Command *cmd) {
       name = string__substring(elem, 0, equals_pos);
       value = string__substring(elem, equals_pos + 1);
     } else {
-      name = elem;
+      name = string__from(elem);
     }
     
     Variable *var = get_variable(variable_table, name);
@@ -77,23 +77,38 @@ int builtin_readonly(Command *cmd) {
           print_error(_SLIT("Cannot modify readonly variable"));
           return 1;
         }
-        rfree(var);
+        VariableType new_type = parse_variable_type(value);
+        if (var->value.type != new_type) {
+          print_error(_SLIT("Type mismatch: cannot change variable type"));
+          return 1;
+        }
         var->str = string__from(value);
       }
       set_variable_flag(&var->flags, VarFlag_ReadOnly);
     } else {
-      value = !string__is_null_or_empty(value) ? value : _SLIT0;
-      var = set_variable(variable_table, name, value, parse_variable_type(value), true);
+      VariableType type = VAR_STRING;
+      
+      if (refer_to_indexed_array) {
+        type = VAR_ARRAY;
+      } else if (refer_to_associative_array) {
+        type = VAR_ASSOCIATIVE_ARRAY;
+      }
+      
+      if (!string__is_null_or_empty(value)) {
+        VariableType value_type = parse_variable_type(value);
+        if ((refer_to_indexed_array && value_type != VAR_ARRAY) ||
+            (refer_to_associative_array && value_type != VAR_ASSOCIATIVE_ARRAY)) {
+          print_error(_SLIT("Type mismatch: value does not match specified array type"));
+          return 1;
+        }
+        type = value_type;
+      }
+      
+      var = set_variable(variable_table, name, (string__is_null_or_empty(value) ? va_value_default_string(type) : value), type, true);
       if (var == NULL) {
         print_error(_SLIT("Failed to set readonly variable"));
         return 1;
       }
-    }
-    
-    if (refer_to_indexed_array) {
-      var->value.type = VAR_ARRAY;
-    } else if (refer_to_associative_array) {
-      var->value.type = VAR_ASSOCIATIVE_ARRAY;
     }
     
     string__free(name);

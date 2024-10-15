@@ -129,6 +129,7 @@ Variable* set_variable(VariableTable* table, const string name, const string val
       break;
     case VAR_ASSOCIATIVE_ARRAY:
       if (var->value._map) map_free(var->value._map);
+      var->value._map = create_map_with_func(vfree_va_value);
       parse_and_set_associative_array(variable_table, name, value);
       break;
     default:
@@ -194,6 +195,13 @@ void parse_and_set_array(VariableTable* table, const string name, const string v
 
 void parse_and_set_associative_array(VariableTable* table, const string name, const string input) {
   if (string__is_null_or_empty(input) || table == NULL) return;
+  Variable* existing = get_variable(table, name);
+  if (existing != NULL) {
+    if (existing->value.type == VAR_ASSOCIATIVE_ARRAY) {
+      map_free(existing->value._map);
+      existing->value._map = create_map_with_func(vfree_va_value);
+    }
+  }
   Variable* var = create_new_variable(table, name, VAR_ASSOCIATIVE_ARRAY);
 
   if (input.str[0] != '{' || input.str[input.len - 1] != '}') {
@@ -305,16 +313,31 @@ void set_associative_array_variable(VariableTable* table, const string name, con
     return;
   }
 
-  va_value_t outval;
-  size_t outval_size;
-  MapResult result = map_get(var->value._map, key.str, &outval, &outval_size);
-  if (!result.is_err) {
-    free_va_value(&outval);
-  }
-
   VariableType vt = parse_variable_type(value);
   va_value_t new_value = string_to_va_value(value, vt);
   map_insert(var->value._map, key.str, &new_value, sizeof(va_value_t));
+}
+
+string va_value_default_string(const VariableType type) {
+  string result = _SLIT0;
+  switch (type) {
+    case VAR_STRING:
+      result = _SLIT("\"\"");
+      break;
+    case VAR_INTEGER:
+      result = _SLIT("0");
+      break;
+    case VAR_ARRAY:
+      result = _SLIT("()");
+      break;
+    case VAR_ASSOCIATIVE_ARRAY:
+      result = _SLIT("{}");
+      break;
+    default:
+      result = _SLIT0;
+      break;
+  }
+  return result;
 }
 
 string va_value_to_string(const va_value_t* value) {

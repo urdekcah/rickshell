@@ -69,6 +69,7 @@ bool do_not_expand_this_builtin(const string name);
 VariableType parse_variable_type(const string value);
 Variable* resolve_nameref(Variable* var);
 void set_associative_array_variable(VariableTable* table, const string name, const string key, const string value);
+string va_value_default_string(const VariableType type);
 string va_value_to_string(const va_value_t* value);
 va_value_t string_to_va_value(const string str, VariableType type);
 void free_va_value(va_value_t* value);

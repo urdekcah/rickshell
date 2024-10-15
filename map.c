@@ -78,10 +78,14 @@ MapResult map_insert(map* m, const char* key, void* value, size_t value_size) {
     if (strcmp(m->buckets[index].key, key) == 0) {
       if (m->value_free) m->value_free(m->buckets[index].value);
       void* new_value = malloc(value_size);
-      if (!new_value) return Err((void*)MAP_ERROR_MEMORY);
+      if (!new_value) {
+        pthread_mutex_unlock(&m->lock);
+        return Err((void*)MAP_ERROR_MEMORY);
+      }
       memcpy(new_value, value, value_size);
       m->buckets[index].value = new_value;
       m->buckets[index].value_size = value_size;
+      pthread_mutex_unlock(&m->lock);
       return Ok((void*)MAP_OK);
     }
     index = (index + 1) % m->capacity;

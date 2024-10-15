@@ -105,25 +105,30 @@ int execute_command(Command* cmd) {
       parse_and_set_array(variable_table, name, value);
     } else if (string__startswith(value, _SLIT("{")) && string__endswith(value, _SLIT("}"))) {
       parse_and_set_associative_array(variable_table, name, value);
-    } else if (open_bracket_index != -1 && close_bracket_index != -1 && open_bracket_index < close_bracket_index) {
+    } else if (open_bracket_index != -1 && close_bracket_index != -1 && open_bracket_index < close_bracket_index && equals_sign_index) {
       string key = string__substring(felem, open_bracket_index + 1, close_bracket_index);
-      string _value = string__substring(felem, close_bracket_index + 1);
+      string _name = string__substring(felem, 0, open_bracket_index);
+      string _value = (cmd->argv.size > 1) ? string__from(*(string*)array_get(cmd->argv, 1)) : _SLIT("");
       
-      Variable* var = get_variable(variable_table, name);
+      Variable* var = get_variable(variable_table, _name);
       if (var != NULL && var->value.type == VAR_ASSOCIATIVE_ARRAY) {
-        set_associative_array_variable(variable_table, name, key, _value);
+        set_associative_array_variable(variable_table, _name, key, _value);
       } else if (var != NULL && var->value.type == VAR_ARRAY) {
         long long index;
         StrconvResult result = ratoll(key, &index);
         if (result.is_err) {
           print_error(_SLIT("Invalid key for associative array"));
+          string__free(_name);
+          string__free(key);
           return -1;
         }
-        array_set_element(variable_table, name, (size_t)index, _value);
+        array_set_element(variable_table, _name, (size_t)index, _value);
       } else {
         print_error(_SLIT("Variable is not an array or associative array"));
         return -1;
       }
+      string__free(_name);
+      string__free(key);
     } else {
       Variable* var = set_variable(variable_table, name, value, parse_variable_type(value), false);
       if (var == NULL) {
@@ -132,6 +137,7 @@ int execute_command(Command* cmd) {
       }
     }
     string__free(name);
+    string__free(value);
     return 0;
   } else if (should_not_expand) {
     StringArray _argv = array_clone_from(cmd->argv);
