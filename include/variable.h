@@ -49,6 +49,7 @@ typedef struct {
   int capacity;
 } VariableTable;
 
+bool is_variable_any_flag_set(va_flag_t* vf);
 bool is_variable_flag_set(va_flag_t* vf, va_flag_t flag);
 void set_variable_flag(va_flag_t* vf, va_flag_t flag);
 void unset_variable_flag(va_flag_t* vf, va_flag_t flag);

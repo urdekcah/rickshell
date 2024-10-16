@@ -97,13 +97,12 @@ Variable* set_variable(VariableTable* table, const string name, const string val
   if (var == NULL) {
     var = create_new_variable(table, name, type);
   } else {
+    if (is_variable_flag_set(&var->flags, VarFlag_ReadOnly)) {
+      print_error(_SLIT("Cannot modify readonly variable"));
+      return NULL;
+    }
     string__free(var->str);
     free_va_value(&var->value);
-  }
-
-  if (is_variable_flag_set(&var->flags, VarFlag_ReadOnly)) {
-    print_error(_SLIT("Cannot modify readonly variable"));
-    return NULL;
   }
 
   var->str = string__from(value);
@@ -197,10 +196,11 @@ void parse_and_set_associative_array(VariableTable* table, const string name, co
   if (string__is_null_or_empty(input) || table == NULL) return;
   Variable* existing = get_variable(table, name);
   if (existing != NULL) {
-    if (existing->value.type == VAR_ASSOCIATIVE_ARRAY) {
-      map_free(existing->value._map);
-      existing->value._map = create_map_with_func(vfree_va_value);
+    if (is_variable_flag_set(&existing->flags, VarFlag_ReadOnly)) {
+      print_error(_SLIT("Cannot modify readonly variable"));
+      return;
     }
+    unset_variable(table, name);
   }
   Variable* var = create_new_variable(table, name, VAR_ASSOCIATIVE_ARRAY);
 
@@ -230,6 +230,7 @@ void parse_and_set_associative_array(VariableTable* table, const string name, co
       string svalue = string__new(value);
       set_associative_array_variable(table, var->name, skey, svalue);
       string__free(skey);
+      string__free(svalue);
     }
     token = strtok(NULL, " ");
   }
@@ -970,6 +971,7 @@ string expand_variables(VariableTable* table, const string input) {
   return result;
 }
 
+bool is_variable_any_flag_set(va_flag_t* vf) { return *vf != 0; }
 bool is_variable_flag_set(va_flag_t* vf, va_flag_t flag) { return (*vf & flag) != 0; }
 void set_variable_flag(va_flag_t* vf, va_flag_t flag) { *vf |= flag; }
 void unset_variable_flag(va_flag_t* vf, va_flag_t flag) { *vf &= ~flag; }

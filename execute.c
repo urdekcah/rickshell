@@ -132,6 +132,8 @@ int execute_command(Command* cmd) {
     } else {
       Variable* var = set_variable(variable_table, name, value, parse_variable_type(value), false);
       if (var == NULL) {
+        string__free(name);
+        string__free(value);
         print_error(_SLIT("Failed to set variable"));
         return -1;
       }
