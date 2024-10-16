@@ -1,26 +1,32 @@
-CC=gcc
-CFLAGS=-O3 -g0 -fvisibility=hidden -Wl,--strip-all -Wall -Wextra -Wconversion -Wnull-dereference -Wshadow -Wlogical-op -Wuninitialized -fstrict-aliasing -Werror -Iinclude
-LDFLAGS=-static -Wl,--strip-all,--warn-common
-AR=ar
-ARFLAGS=rcs
+CC := gcc
+CFLAGS := -O3 -g0 -fvisibility=hidden -Wl,--strip-all -Wall -Wextra -Wconversion -Wnull-dereference -Wshadow -Wlogical-op -Wuninitialized -fstrict-aliasing -Werror -Iinclude
+LDFLAGS := -static -Wl,--strip-all,--warn-common
+AR := ar
+ARFLAGS := rcs
 
-BUILTIN_SRCS=$(wildcard builtin/*.c)
-BUILTIN_OBJS=$(BUILTIN_SRCS:.c=.o)
-BUILTIN_LIB=lib/libbuiltin.a
+TARGET := rickshell
+BUILTIN_DIR := builtin
+LIB_DIR := lib
+BUILTIN_LIB := $(LIB_DIR)/libbuiltin.a
 
-SRCS=main.c array.c builtin.c error.c execute.c expr.c file.c io.c iterator.c job.c parser.tab.c lex.yy.c log.c map.c memory.c pipeline.c redirect.c strconv.c string.c variable.c
-OBJS=$(SRCS:.c=.o)
+SRCS := $(wildcard *.c) $(wildcard $(BUILTIN_DIR)/*.c)
+SRCS := $(filter-out lex.yy.c, $(SRCS))
+OBJS := $(SRCS:.c=.o)
+BUILTIN_OBJS := $(filter $(BUILTIN_DIR)/%.o,$(OBJS))
+MAIN_OBJS := $(filter-out $(BUILTIN_OBJS),$(OBJS))
 
-TARGET=rickshell
+.PHONY: all clean build ochistka
 
-all: $(BUILTIN_LIB) $(TARGET)
+all: build ochistka
+
+build: $(BUILTIN_LIB) $(TARGET)
 
 $(BUILTIN_LIB): $(BUILTIN_OBJS)
-	@mkdir -p lib
+	@mkdir -p $(LIB_DIR)
 	$(AR) $(ARFLAGS) $@ $^
 
-$(TARGET): $(OBJS) $(BUILTIN_LIB)
-	$(CC) $(CFLAGS) -o $@ $(OBJS) $(BUILTIN_LIB) $(LDFLAGS)
+$(TARGET): $(MAIN_OBJS) lex.yy.o $(BUILTIN_LIB)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -28,8 +34,11 @@ $(TARGET): $(OBJS) $(BUILTIN_LIB)
 lex.yy.o: lex.yy.c
 	$(CC) $(CFLAGS) -Wno-null-dereference -Wno-error=null-dereference -c $< -o $@
 
-clean:
-	rm -f $(OBJS) $(BUILTIN_OBJS) $(TARGET) $(BUILTIN_LIB)
-	rm -rf lib
+ochistka:
+	@echo "Cleaning up object files..."
+	@rm -f $(OBJS) lex.yy.o $(BUILTIN_LIB)
+	@rm -rf $(LIB_DIR)
 
-.PHONY: all clean
+clean:
+	rm -f $(OBJS) lex.yy.o $(TARGET) $(BUILTIN_LIB)
+	rm -rf $(LIB_DIR)
