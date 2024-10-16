@@ -47,13 +47,11 @@ int builtin_export(Command *cmd) {
   if (print_all) {
     for (int j = 0; j < variable_table->size; j++) {
       Variable *var = &variable_table->variables[j];
-      if (is_variable_flag_set(&var->flags, VarFlag_Exported)) {
+      if (is_variable_flag_set(&var->flags, VarFlag_Exported))
         ffprintln(stdout, "declare -x %S=\"%S\"", var->name, var->str);
-      }
     }
-    if (i == cmd->argv.size) {
+    if (i == cmd->argv.size)
       return 0;
-    }
   }
 
   for (; i < cmd->argv.size; i++) {
@@ -86,11 +84,7 @@ int builtin_export(Command *cmd) {
           set_variable_flag(&var->flags, VarFlag_Exported);
         }
       } else {
-        if (remove_export) {
-          unset_variable_flag(&var->flags, VarFlag_Exported);
-        } else {
-          set_variable_flag(&var->flags, VarFlag_Exported);
-        }
+        (remove_export ? unset_variable_flag : set_variable_flag)(&var->flags, VarFlag_Exported);
       }
     }
     

@@ -160,11 +160,6 @@ static int setup_signal_handler(void) {
 }
 
 static int process_command(const string input) {
-  if (string__length(input) > MAX_COMMAND_LENGTH) {
-    ffprintln(stderr, "Error: Command too long");
-    return -1;
-  }
-
   if (string__compare(input, _SLIT("exit")) == 0) return 1;
   parse_and_execute(input);
   return 0;

@@ -39,14 +39,17 @@ void free_variable_table(VariableTable* table) {
   rfree(table);
 }
 
-Variable* create_new_variable(VariableTable* table, const string name, VariableType type) {
-  Variable* existing = get_variable(table, name);
-  if (existing != NULL) return existing;
-
-  if (table->size == table->capacity) {
+static void ensure_capacity(VariableTable* table) {
+  if (table->size >= table->capacity) {
     table->capacity *= 2;
     table->variables = rrealloc(table->variables, (size_t)(table->capacity * (int)sizeof(Variable)));
   }
+}
+
+Variable* create_new_variable(VariableTable* table, const string name, VariableType type) {
+  Variable* existing = get_variable(table, name);
+  if (existing != NULL) return existing;
+  if (table->size >= table->capacity) ensure_capacity(table);
 
   Variable* var = &table->variables[table->size++];
   var->name = string__from(name);
@@ -81,7 +84,7 @@ void process_string_variable(Variable* var) {
   if (!var->value.type == VAR_STRING) return;
   if (string__is_null_or_empty(var->value._str)) return;
   if (is_variable_flag_set(&var->flags, VarFlag_Uppercase)) rstring__upper(var->value._str);
-  else if (is_variable_flag_set(&var->flags, VarFlag_Lowercase)) rstring__upper(var->value._str);
+  else if (is_variable_flag_set(&var->flags, VarFlag_Lowercase)) rstring__lower(var->value._str);
 }
 
 void process_exported_variable(Variable* var) {
@@ -128,7 +131,6 @@ Variable* set_variable(VariableTable* table, const string name, const string val
       break;
     case VAR_ASSOCIATIVE_ARRAY:
       if (var->value._map) map_free(var->value._map);
-      var->value._map = create_map_with_func(vfree_va_value);
       parse_and_set_associative_array(variable_table, name, value);
       break;
     default:
@@ -174,26 +176,9 @@ void unset_variable(VariableTable* table, const string name) {
   }
 }
 
-void parse_and_set_array(VariableTable* table, const string name, const string value) {
-  string trimmed_value = string__substring(value, 1, (ssize_t)(value.len - 1));
-  Variable* var = create_new_variable(table, name, VAR_ARRAY);
-
-  char* token;
-  char* rest = trimmed_value.str;
-
-  while ((token = strtok_r(rest, " ", &rest)) != NULL) {
-    string stroken = string__new(token);
-    VariableType type = parse_variable_type(stroken);
-    va_value_t _value = string_to_va_value(stroken, type);
-    array_push(&var->value._array, &_value);
-    string__free(stroken);
-  }
-
-  string__free(trimmed_value);
-}
-
-void parse_and_set_associative_array(VariableTable* table, const string name, const string input) {
-  if (string__is_null_or_empty(input) || table == NULL) return;
+void parse_and_set_array(VariableTable* table, string name, string value) {
+  if (string__is_null_or_empty(value) || table == NULL) return;
+  
   Variable* existing = get_variable(table, name);
   if (existing != NULL) {
     if (is_variable_flag_set(&existing->flags, VarFlag_ReadOnly)) {
@@ -202,40 +187,81 @@ void parse_and_set_associative_array(VariableTable* table, const string name, co
     }
     unset_variable(table, name);
   }
-  Variable* var = create_new_variable(table, name, VAR_ASSOCIATIVE_ARRAY);
-
-  if (input.str[0] != '{' || input.str[input.len - 1] != '}') {
-    ffprintln(stderr, "Invalid input format");
+  
+  if (value.str[0] != '(' || value.str[value.len - 1] != ')') {
+    print_error(_SLIT("Invalid array format"));
     return;
   }
+  
+  string trimmed_value = string__substring(value, 1, (ssize_t)(value.len - 1));
+  Variable* var = create_new_variable(table, name, VAR_ARRAY);
+  StringArray tokens = string__split(trimmed_value, _SLIT(" "));
 
+  for (size_t i = 0; i < tokens.size; i++) {
+    string* token = (string*)array_get(tokens, i);
+    VariableType type = parse_variable_type(*token);
+    va_value_t _value = string_to_va_value(*token, type);
+    array_push(&var->value._array, &_value);
+  }
+
+  for (size_t i = 0; i < tokens.size; i++)
+    string__free(*(string*)array_get(tokens, i));
+  array_free(&tokens);
+  string__free(trimmed_value);
+}
+
+void parse_and_set_associative_array(VariableTable* table, string name, string input) {
+  if (string__is_null_or_empty(input) || table == NULL) return;
+  
+  Variable* existing = get_variable(table, name);
+  if (existing != NULL) {
+    if (is_variable_flag_set(&existing->flags, VarFlag_ReadOnly)) {
+      print_error(_SLIT("Cannot modify readonly variable"));
+      return;
+    }
+    unset_variable(table, name);
+  }
+  
+  Variable* var = create_new_variable(table, name, VAR_ASSOCIATIVE_ARRAY);
+  
+  if (input.str[0] != '{' || input.str[input.len - 1] != '}') {
+    print_error(_SLIT("Invalid input format"));
+    return;
+  }
+  
   string trimmed_input = string__substring(input, 1, (ssize_t)(input.len - 1));
-
-  char* token = strtok(trimmed_input.str, " ");
-  while (token != NULL) {
-    char* equal_sign = strchr(token, '=');
-    if (equal_sign != NULL) {
-      *equal_sign = '\0';
-      if (token[0] != '[') {
-        ffprintln(stderr, "Invalid key format");
+  StringArray tokens = string__split(trimmed_input, _SLIT(" "));
+  
+  for (size_t i = 0; i < tokens.size; i++) {
+    string token = *(string*)array_get(tokens, i);
+    ssize_t equal_sign_index = string__indexof(token, _SLIT("="));
+    
+    if (equal_sign_index != -1) {
+      string key_part = string__substring(token, 0, equal_sign_index);
+      string value = string__substring(token, equal_sign_index + 1);
+      
+      if (!string__startswith(key_part, _SLIT("["))) {
+        print_error(_SLIT("Invalid key format"));
         string__free(trimmed_input);
+        for (i = 0; i < tokens.size; i++)
+          string__free(*(string*)array_get(tokens, i));
+        array_free(&tokens);
         return;
       }
-      char* key = token + 1;
-      char* value = equal_sign + 1;
-      char* close_bracket = strchr(key, ']');
-      if (close_bracket != NULL)
-        *close_bracket = '\0';
-      string skey = string__new(key);
-      string svalue = string__new(value);
-      set_associative_array_variable(table, var->name, skey, svalue);
-      string__free(skey);
-      string__free(svalue);
+      
+      string key = string__substring(key_part, 1, string__indexof(key_part, _SLIT("]")));
+      set_associative_array_variable(table, var->name, key, value);
+      
+      string__free(key_part);
+      string__free(key);
+      string__free(value);
     }
-    token = strtok(NULL, " ");
   }
   
   string__free(trimmed_input);
+  for (size_t i = 0; i < tokens.size; i++)
+    string__free(*(string*)array_get(tokens, i));
+  array_free(&tokens);
 }
 
 void array_set_element(VariableTable* table, const string name, size_t index, const string value) {
@@ -258,9 +284,8 @@ void array_set_element(VariableTable* table, const string name, size_t index, co
 bool do_not_expand_this_builtin(const string name) {
   string do_not_expand[] = {_SLIT("declare"), _SLIT("export"), _SLIT("readonly"), _SLIT("set"), _SLIT("unset")};
   for (int i = 0; (unsigned long)i < sizeof(do_not_expand) / sizeof(string); i++) {
-    if (string__compare(name, do_not_expand[i]) == 0) {
+    if (string__compare(name, do_not_expand[i]) == 0)
       return true;
-    }
   }
   return false;
 }
@@ -335,7 +360,6 @@ string va_value_default_string(const VariableType type) {
       result = _SLIT("{}");
       break;
     default:
-      result = _SLIT0;
       break;
   }
   return result;
@@ -348,10 +372,12 @@ string va_value_to_string(const va_value_t* value) {
       result = string__from(value->_str);
       break;
     case VAR_INTEGER:
-      char* temp = rmalloc(32);
-      snprintf(temp, 32, "%lld", value->_number);
-      result = string__new(temp);
-      rfree(temp);
+      StrconvResult r = rlltos(value->_number);
+      if (r.is_err) {
+        print_error(_SLIT("Failed to convert integer to string"));
+        return _SLIT0;
+      }
+      result = *(string*)(r.value);
       break;
     case VAR_ARRAY: {
       StringBuilder sb = string_builder__new();
@@ -405,53 +431,58 @@ va_value_t string_to_va_value(const string str, VariableType type) {
     case VAR_STRING:
       result._str = string__remove_quotes(str);
       break;
-    case VAR_INTEGER:
-      result._number = atoll(str.str);
+    case VAR_INTEGER: {
+      long long num;
+      StrconvResult r = ratoll(str, &num);
+      if (r.is_err) {
+        result._number = 0;
+        print_error(_SLIT("Failed to convert string to integer"));
+      } else {
+        result._number = num;
+      }
       break;
+    }
     case VAR_ARRAY: {
       result._array = create_array(sizeof(va_value_t));
-      char* token;
-      char* rest = rstrdup(str.str + 1);
-      rest[strlen(rest) - 1] = '\0';
-      while ((token = strtok_r(rest, " ", &rest))) {
-        string stroken = string__new(token);
-        VariableType _type = parse_variable_type(stroken);
-        va_value_t value = string_to_va_value(stroken, _type);
-        string__free(stroken);
+      string trimmed = string__substring(str, 1, (ssize_t)str.len - 1);
+      StringArray tokens = string__split(trimmed, _SLIT(" "));
+      for (size_t i = 0; i < tokens.size; i++) {
+        string elem = *(string*)array_get(tokens, i);
+        VariableType _type = parse_variable_type(elem);
+        va_value_t value = string_to_va_value(elem, _type);
         array_push(&result._array, &value);
       }
-      rfree(rest);
+      string__free(trimmed);
+      for (size_t i = 0; i < tokens.size; i++) {
+        string elem = *(string*)array_get(tokens, i);
+        string__free(elem);
+      }
+      array_free(&tokens);
       break;
     }
     case VAR_ASSOCIATIVE_ARRAY: {
       result._map = create_map_with_func(vfree_va_value);
-      string trimmed_input = string__substring(str, 1, (ssize_t)(str.len - 1));
-      char* token = strtok(trimmed_input.str, " ");
-      while (token != NULL) {
-        char* equal_sign = strchr(token, '=');
-        if (equal_sign != NULL) {
-          *equal_sign = '\0';
-          if (token[0] != '[') {
-            ffprintln(stderr, "Invalid key format");
-            string__free(trimmed_input);
-            result.type = VAR_STRING;
-            result._str = _SLIT0;
-            break;
-          }
-          char* key = token + 1;
-          char* value = equal_sign + 1;
-          char* close_bracket = strchr(key, ']');
-          if (close_bracket != NULL)
-            *close_bracket = '\0';
-          string svalue = string__new(value);
-          VariableType vt = parse_variable_type(svalue);
-          va_value_t new_value = string_to_va_value(svalue, vt);
-          map_insert(result._map, key, &new_value, sizeof(va_value_t));
-          string__free(svalue);
+      string trimmed_input = string__substring(str, 1, (ssize_t)str.len - 1);
+      StringArray pairs = string__split(trimmed_input, _SLIT(" "));
+      for (size_t i = 0; i < pairs.size; i++) {
+        string elem = *(string*)array_get(pairs, i);
+        ssize_t equal_sign_index = string__indexof(elem, _SLIT("="));
+        if (equal_sign_index != -1) {
+          string key = string__substring(elem, 1, equal_sign_index - 1);
+          string value = string__substring(elem, equal_sign_index + 1, (ssize_t)elem.len);
+          VariableType vt = parse_variable_type(value);
+          va_value_t new_value = string_to_va_value(value, vt);
+          map_insert(result._map, key.str, &new_value, sizeof(va_value_t));
+          string__free(key);
+          string__free(value);
+        } else {
+          print_error(_SLIT("Invalid key-value pair format"));
         }
-        token = strtok(NULL, " ");
       }
       string__free(trimmed_input);
+      for (size_t i = 0; i < pairs.size; i++)
+        string__free(*(string*)array_get(pairs, i));
+      array_free(&pairs);
       break;
     }
     default:

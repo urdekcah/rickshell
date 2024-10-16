@@ -26,7 +26,6 @@ int builtin_set(Command* cmd) {
       string value = string__substring(elem, equals_pos + 1);
       Variable* var = set_variable(variable_table, name, value, parse_variable_type(value), false);
       if (var == NULL) {
-        print_error(_SLIT("Failed to set variable"));
         return 0;
       }
       string__free(name);

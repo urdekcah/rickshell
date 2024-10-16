@@ -24,9 +24,6 @@ extern int yyparse(void);
 extern int yylex_destroy(void);
 extern void yy_scan_string(const char *str);
 
-#define MAX_INPUT_LENGTH 4096
-#define MAX_COMMAND_LENGTH 1024
-
 extern CommandList* command_list;
 extern VariableTable* variable_table;
 
@@ -101,15 +98,11 @@ int execute_command(Command* cmd) {
       value = temp;
     }
 
-    if (string__startswith(value, _SLIT("(")) && string__endswith(value, _SLIT(")"))) {
-      parse_and_set_array(variable_table, name, value);
-    } else if (string__startswith(value, _SLIT("{")) && string__endswith(value, _SLIT("}"))) {
-      parse_and_set_associative_array(variable_table, name, value);
-    } else if (open_bracket_index != -1 && close_bracket_index != -1 && open_bracket_index < close_bracket_index && equals_sign_index) {
+    if (open_bracket_index != -1 && close_bracket_index != -1 && open_bracket_index < close_bracket_index && equals_sign_index) {
       string key = string__substring(felem, open_bracket_index + 1, close_bracket_index);
       string _name = string__substring(felem, 0, open_bracket_index);
       string _value = (cmd->argv.size > 1) ? string__from(*(string*)array_get(cmd->argv, 1)) : _SLIT("");
-      
+
       Variable* var = get_variable(variable_table, _name);
       if (var != NULL && var->value.type == VAR_ASSOCIATIVE_ARRAY) {
         set_associative_array_variable(variable_table, _name, key, _value);
@@ -119,6 +112,7 @@ int execute_command(Command* cmd) {
         if (result.is_err) {
           print_error(_SLIT("Invalid key for associative array"));
           string__free(_name);
+          string__free(_value);
           string__free(key);
           return -1;
         }
@@ -128,13 +122,17 @@ int execute_command(Command* cmd) {
         return -1;
       }
       string__free(_name);
+      string__free(_value);
       string__free(key);
+    } else if (string__startswith(value, _SLIT("(")) && string__endswith(value, _SLIT(")"))) {
+      parse_and_set_array(variable_table, name, value);
+    } else if (string__startswith(value, _SLIT("{")) && string__endswith(value, _SLIT("}"))) {
+      parse_and_set_associative_array(variable_table, name, value);
     } else {
       Variable* var = set_variable(variable_table, name, value, parse_variable_type(value), false);
       if (var == NULL) {
         string__free(name);
         string__free(value);
-        print_error(_SLIT("Failed to set variable"));
         return -1;
       }
     }
@@ -327,29 +325,9 @@ int parse_and_execute(const string input) {
     print_error(_SLIT("Invalid input"));
     return -1;
   }
-  
-  size_t input_len = strnlen(input.str, MAX_INPUT_LENGTH);
-  if (input_len >= MAX_INPUT_LENGTH) {
-    print_error(_SLIT("Input exceeds maximum allowed length"));
-    return -1;
-  }
-
-  char* sanitized_input = (char*)rmalloc(input_len + 1);
-  if (sanitized_input == NULL) {
-    print_error(_SLIT("Memory allocation failed"));
-    return -1;
-  }
-
-  size_t sanitized_len = 0;
-  for (size_t i = 0; i < input_len; i++) {
-    if (isprint(input.str[i]) || isspace(input.str[i])) {
-      sanitized_input[sanitized_len++] = input.str[i];
-    }
-  }
-  sanitized_input[sanitized_len] = '\0';
 
   char* saveptr;
-  char* cmd = strtok_r(sanitized_input, ";", &saveptr);
+  char* cmd = strtok_r(input.str, ";", &saveptr);
   int result = 0;
 
   while (cmd != NULL) {
@@ -392,6 +370,5 @@ int parse_and_execute(const string input) {
     cmd = strtok_r(NULL, ";", &saveptr);
   }
   
-  rfree((void*)sanitized_input);
   return result;
 }

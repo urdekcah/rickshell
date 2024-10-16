@@ -220,13 +220,17 @@ StringArray string__split(string s, string delim) {
   ssize_t pos = 0;
   ssize_t prev = 0;
   StringArray result = create_array(sizeof(string));
-    
-  while ((pos = string__indexof(string__substring(s, prev), delim)) != -1) {
+  string tok = string__substring(s, prev);
+
+  while ((pos = string__indexof(tok, delim)) != -1) {
     string part = string__substring(s, prev, prev + pos);
     array_push(&result, &part);
     prev += pos + (ssize_t)delim.len;
+    string__free(tok);
+    tok = string__substring(s, prev);
   }
-    
+  string__free(tok);
+  
   if (prev < (ssize_t)s.len) {
     string part = string__substring(s, prev);
     array_push(&result, &part);
