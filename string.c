@@ -378,10 +378,10 @@ string string__remove_suffix(string s, string suffix, bool greedy) {
 }
 
 string string__remove_quotes(string s) {
-  if (string__length(s) < 2) return s;
+  if (string__length(s) < 2) return string__from(s);
   if ((s.str[0] == '"' && s.str[s.len - 1] == '"') || (s.str[0] == '\'' && s.str[s.len - 1] == '\''))
     return string__substring(s, 1, (ssize_t)(s.len - 1));
-  return s;
+  return string__from(s);
 }
 
 bool string__isdigit(string s) {

@@ -17,9 +17,11 @@ int builtin_unset(Command* cmd) {
     return -1;
   }
 
-  bool _unset_variable = true; // need to change into false in future
-
+  bool _unset_variable = true;
+  bool unset_nameref = false;
+  int exit_status = 0;
   size_t i;
+
   for (i = 1; i < cmd->argv.size; i++) {
     string elem = *(string*)array_checked_get(cmd->argv, i);
     if (elem.str[0] != '-') {
@@ -30,37 +32,32 @@ int builtin_unset(Command* cmd) {
         case 'v':
           _unset_variable = true;
           break;
+        case 'n':
+          unset_nameref = true;
+          break;
         default:
           ffprintln(stderr, "unset: invalid option -%c", elem.str[j]);
           return 1;
       }
     }
-    string__free(elem);
   }
-
-  int exit_status = 0;
 
   for (; i < cmd->argv.size; i++) {
     string name = *(string*)array_checked_get(cmd->argv, i);
-    bool success = false;
-
-    if (_unset_variable) {
-      Variable* var = get_variable(variable_table, name);
-      if (var) {
-        if (is_variable_flag_set(&var->flags, VarFlag_ReadOnly)) {
-          ffprintln(stderr, "unset: %S: cannot unset: readonly variable", name);
-          exit_status = 1;
-        } else {
-          unset_variable(variable_table, name);
-          success = true;
-        }
+    Variable* var = get_variable(variable_table, name);
+    if (var) {
+      if (is_variable_flag_set(&var->flags, VarFlag_ReadOnly)) {
+        ffprintln(stderr, "unset: cannot unset \"%S\". readonly variable", name);
+        exit_status = 1;
+      } else if (unset_nameref && is_variable_flag_set(&var->flags, VarFlag_Referece)) {
+        unset_variable_flag(&var->flags, VarFlag_Referece);
+      } else if (_unset_variable) {
+        unset_variable(variable_table, name);
       }
+    } else {
+      ffprintln(stderr, "unset: cannot unset \"%S\". variable is not set", name);
+      exit_status = 1;
     }
-
-    if (!success) {
-      fprintln("unset: \"%S\" not found", name);
-    }
-    string__free(name);
   }
 
   return exit_status;
