@@ -76,6 +76,7 @@ void log_init(const LogConfig* config) {
     char* fname = expand_home_directory(config->filename.str);
     log_ctx.filename = string__new(fname);
     ensure_log_file_open();
+    free(fname);
   }
 
   log_ctx.log_format = string__from((!string__is_null_or_empty(config->log_format))? config->log_format : DEFAULT_LOG_FORMAT);

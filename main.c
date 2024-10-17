@@ -7,6 +7,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <pwd.h>
+#include <locale.h>
 #include "expr.h"
 #include "execute.h"
 #include "parser.tab.h"
@@ -164,6 +165,7 @@ static int process_command(const string input) {
 }
 
 int main(void) {
+  setlocale(LC_ALL, "");
   ensure_directory_exist("~/.rickshell");
   if (setup_signal_handler() == -1) {
     return EXIT_FAILURE;
