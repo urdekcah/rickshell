@@ -12,4 +12,6 @@ char* rstrcat(char* dest, const char* src, size_t dest_size);
 
 void *unsafe_rmalloc(size_t size);
 void* unsafe_rcalloc(size_t num, size_t size);
+
+#define VREF(value) ((void*)(value))
 #endif /* __RICKSHELL_MEMORY_H__ */
