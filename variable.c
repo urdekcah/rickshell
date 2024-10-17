@@ -192,22 +192,10 @@ void parse_and_set_array(VariableTable* table, string name, string value) {
     print_error(_SLIT("Invalid array format"));
     return;
   }
-  
-  string trimmed_value = string__substring(value, 1, (ssize_t)(value.len - 1));
+
   Variable* var = create_new_variable(table, name, VAR_ARRAY);
-  StringArray tokens = string__split(trimmed_value, _SLIT(" "));
-
-  for (size_t i = 0; i < tokens.size; i++) {
-    string* token = (string*)array_get(tokens, i);
-    VariableType type = parse_variable_type(*token);
-    va_value_t _value = string_to_va_value(*token, type);
-    array_push(&var->value._array, &_value);
-  }
-
-  for (size_t i = 0; i < tokens.size; i++)
-    string__free(*(string*)array_get(tokens, i));
-  array_free(&tokens);
-  string__free(trimmed_value);
+  array_free(&var->value._array);
+  var->value = string_to_va_value(value, VAR_ARRAY);
 }
 
 void parse_and_set_associative_array(VariableTable* table, string name, string input) {
@@ -228,40 +216,9 @@ void parse_and_set_associative_array(VariableTable* table, string name, string i
     print_error(_SLIT("Invalid input format"));
     return;
   }
-  
-  string trimmed_input = string__substring(input, 1, (ssize_t)(input.len - 1));
-  StringArray tokens = string__split(trimmed_input, _SLIT(" "));
-  
-  for (size_t i = 0; i < tokens.size; i++) {
-    string token = *(string*)array_get(tokens, i);
-    ssize_t equal_sign_index = string__indexof(token, _SLIT("="));
-    
-    if (equal_sign_index != -1) {
-      string key_part = string__substring(token, 0, equal_sign_index);
-      string value = string__substring(token, equal_sign_index + 1);
-      
-      if (!string__startswith(key_part, _SLIT("["))) {
-        print_error(_SLIT("Invalid key format"));
-        string__free(trimmed_input);
-        for (i = 0; i < tokens.size; i++)
-          string__free(*(string*)array_get(tokens, i));
-        array_free(&tokens);
-        return;
-      }
-      
-      string key = string__substring(key_part, 1, string__indexof(key_part, _SLIT("]")));
-      set_associative_array_variable(table, var->name, key, value);
-      
-      string__free(key_part);
-      string__free(key);
-      string__free(value);
-    }
-  }
-  
-  string__free(trimmed_input);
-  for (size_t i = 0; i < tokens.size; i++)
-    string__free(*(string*)array_get(tokens, i));
-  array_free(&tokens);
+
+  map_free(var->value._map);
+  var->value = string_to_va_value(input, VAR_ASSOCIATIVE_ARRAY);
 }
 
 void array_set_element(VariableTable* table, const string name, size_t index, const string value) {
@@ -424,6 +381,65 @@ string va_value_to_string(const va_value_t* value) {
   return result;
 }
 
+static ssize_t identify_value_string_end(const string str) {
+  ssize_t start = 0;
+  bool in_quotes = false;
+
+  while (start < (ssize_t)str.len && str.str[start] == ' ')
+    ++start;
+
+  if (str.str[start] == '"') {
+    string temp = string__substring(str, start + 1);
+    ssize_t index = string__indexof(temp, _SLIT("\""));
+    string__free(temp);
+    return (index != -1) ? start + index + 2 : -1;
+  }
+
+  if (isdigit(str.str[start])) {
+    for (ssize_t i = start; i < (ssize_t)str.len; i++)
+      if (!isdigit(str.str[i])) return i;
+    return (ssize_t)str.len;
+  }
+
+  if (str.str[start] == '(') {
+    for (ssize_t i = start + 1; i < (ssize_t)str.len; i++) {
+      if (str.str[i] == '"') in_quotes = !in_quotes;
+      else if (str.str[i] == ')' && !in_quotes) return i + 1;
+    }
+    return -1;
+  }
+
+  if (str.str[start] == '{') {
+    for (ssize_t i = start + 1; i < (ssize_t)str.len; i++) {
+      if (str.str[i] == '"') in_quotes = !in_quotes;
+      else if (str.str[i] == '}' && !in_quotes) return i + 1;
+    }
+    return -1;
+  }
+
+  for (ssize_t i = start; i < (ssize_t)str.len; i++)
+    if (str.str[i] != ' ') return i;
+
+  return -1;
+}
+
+static ssize_t find_key_value_terminator(const string str) {
+  if (str.str[0] != '[') return -1;
+  ssize_t keyend = 0;
+  for (size_t i = 1; i < str.len; i++) {
+    if (!isalnum(str.str[i]) && str.str[i] != '_') {
+      keyend = (ssize_t)i;
+      break;
+    }
+  }
+  if (str.str[keyend] != ']' || str.str[keyend + 1] != '=') return -1;
+  string temp = string__substring(str, keyend + 2);
+  ssize_t value_end = identify_value_string_end(temp);
+  string__free(temp);
+  if (value_end == -1) return -1;
+  return keyend + 3 + value_end;
+}
+
 va_value_t string_to_va_value(const string str, VariableType type) {
   va_value_t result;
   result.type = type;
@@ -445,44 +461,68 @@ va_value_t string_to_va_value(const string str, VariableType type) {
     case VAR_ARRAY: {
       result._array = create_array(sizeof(va_value_t));
       string trimmed = string__substring(str, 1, (ssize_t)str.len - 1);
-      StringArray tokens = string__split(trimmed, _SLIT(" "));
-      for (size_t i = 0; i < tokens.size; i++) {
-        string elem = *(string*)array_get(tokens, i);
-        VariableType _type = parse_variable_type(elem);
-        va_value_t value = string_to_va_value(elem, _type);
-        array_push(&result._array, &value);
+      string input = string__trim(trimmed);
+      while (input.len > 0) {
+        ssize_t last_index = identify_value_string_end(input);
+        if (last_index == -1) {
+          print_error(_SLIT("Invalid array format"));
+          for (size_t i = 0; i < result._array.size; i++)
+            free_va_value((va_value_t*)array_checked_get(result._array, i));
+          array_free(&result._array);
+          break;
+        }
+        string value = string__substring(input, 0, last_index+1);
+        {
+          string temp = string__trim(value);
+          string__free(value);
+          value = temp;
+        }
+        VariableType vt = parse_variable_type(value);
+        va_value_t new_value = string_to_va_value(value, vt);
+        array_push(&result._array, &new_value);
+        string__free(value);
+        {
+          string temp = string__substring(input, last_index+1);
+          string__free(input);
+          input = temp;
+        }
       }
+      string__free(input);
       string__free(trimmed);
-      for (size_t i = 0; i < tokens.size; i++) {
-        string elem = *(string*)array_get(tokens, i);
-        string__free(elem);
-      }
-      array_free(&tokens);
       break;
     }
     case VAR_ASSOCIATIVE_ARRAY: {
       result._map = create_map_with_func(vfree_va_value);
-      string trimmed_input = string__substring(str, 1, (ssize_t)str.len - 1);
-      StringArray pairs = string__split(trimmed_input, _SLIT(" "));
-      for (size_t i = 0; i < pairs.size; i++) {
-        string elem = *(string*)array_get(pairs, i);
-        ssize_t equal_sign_index = string__indexof(elem, _SLIT("="));
-        if (equal_sign_index != -1) {
-          string key = string__substring(elem, 1, equal_sign_index - 1);
-          string value = string__substring(elem, equal_sign_index + 1, (ssize_t)elem.len);
-          VariableType vt = parse_variable_type(value);
-          va_value_t new_value = string_to_va_value(value, vt);
-          map_insert(result._map, key.str, &new_value, sizeof(va_value_t));
-          string__free(key);
-          string__free(value);
-        } else {
+      string trimmed = string__substring(str, 1, (ssize_t)str.len - 1);
+      string input = string__trim(trimmed);
+      while (input.len > 0) {
+        ssize_t last_index = find_key_value_terminator(input);
+        if (last_index == -1) {
           print_error(_SLIT("Invalid key-value pair format"));
+          map_free(result._map);
+          break;
+        }
+        ssize_t keyend = string__indexof(input, _SLIT("]"));
+        string key = string__substring(input, 1, keyend);
+        string value = string__substring(input, keyend + 2, last_index);
+        {
+          string temp = string__trim(value);
+          string__free(value);
+          value = temp;
+        }
+        VariableType vt = parse_variable_type(value);
+        va_value_t new_value = string_to_va_value(value, vt);
+        map_insert(result._map, key.str, &new_value, sizeof(va_value_t));
+        string__free(key);
+        string__free(value);
+        {
+          string temp = string__substring(input, last_index+1);
+          string__free(input);
+          input = temp;
         }
       }
-      string__free(trimmed_input);
-      for (size_t i = 0; i < pairs.size; i++)
-        string__free(*(string*)array_get(pairs, i));
-      array_free(&pairs);
+      string__free(input);
+      string__free(trimmed);
       break;
     }
     default:
