@@ -24,7 +24,8 @@ int execute_builtin(Command* cmd) {
 }
 
 builtin_func get_builtin_func(const string name) {
-  for (int i = 0; !string__is_null_or_empty(builtin_commands[i].name); i++) {
+  register size_t i;
+  for (i = 0; !string__is_null_or_empty(builtin_commands[i].name); i++) {
     if (string__compare(name, builtin_commands[i].name) == 0) {
       return builtin_commands[i].func;
     }

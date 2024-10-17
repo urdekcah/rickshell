@@ -30,7 +30,8 @@ VariableTable* create_variable_table() {
 }
 
 void free_variable_table(VariableTable* table) {
-  for (int i = 0; i < table->size; i++) {
+  register int i;
+  for (i = 0; i < table->size; i++) {
     string__free(table->variables[i].name);
     string__free(table->variables[i].str);
     free_va_value(&table->variables[i].value);
@@ -142,7 +143,8 @@ Variable* set_variable(VariableTable* table, const string name, const string val
 }
 
 Variable* get_variable(VariableTable* table, const string name) {
-  for (int i = 0; i < table->size; i++) {
+  register int i;
+  for (i = 0; i < table->size; i++) {
     if (string__compare(table->variables[i].name, name) == 0) {
       Variable* var = &table->variables[i];
       if (var->value.type == VAR_NAMEREF) {
@@ -160,7 +162,8 @@ Variable* get_variable(VariableTable* table, const string name) {
 }
 
 void unset_variable(VariableTable* table, const string name) {
-  for (int i = 0; i < table->size; i++) {
+  register int i;
+  for (i = 0; i < table->size; i++) {
     if (string__compare(table->variables[i].name, name) == 0) {
       if (is_variable_flag_set(&table->variables[i].flags, VarFlag_ReadOnly)) {
         print_error(_SLIT("Cannot unset readonly variable"));
@@ -339,7 +342,8 @@ string va_value_to_string(const va_value_t* value) {
     case VAR_ARRAY: {
       StringBuilder sb = string_builder__new();
       string_builder__append_char(&sb, '(');
-      for (size_t i = 0; i < value->_array.size; ++i) {
+      register size_t i;
+      for (i = 0; i < value->_array.size; ++i) {
         va_value_t element = *(va_value_t*)array_checked_get(value->_array, i);
         string element_str = va_value_to_string(&element);
         string_builder__append(&sb, element_str);
@@ -384,6 +388,7 @@ string va_value_to_string(const va_value_t* value) {
 static ssize_t identify_value_string_end(const string str) {
   ssize_t start = 0;
   bool in_quotes = false;
+  register ssize_t i;
 
   while (start < (ssize_t)str.len && str.str[start] == ' ')
     ++start;
@@ -396,13 +401,13 @@ static ssize_t identify_value_string_end(const string str) {
   }
 
   if (isdigit(str.str[start])) {
-    for (ssize_t i = start; i < (ssize_t)str.len; i++)
+    for (i = start; i < (ssize_t)str.len; i++)
       if (!isdigit(str.str[i])) return i;
     return (ssize_t)str.len;
   }
 
   if (str.str[start] == '(') {
-    for (ssize_t i = start + 1; i < (ssize_t)str.len; i++) {
+    for (i = start + 1; i < (ssize_t)str.len; i++) {
       if (str.str[i] == '"') in_quotes = !in_quotes;
       else if (str.str[i] == ')' && !in_quotes) return i + 1;
     }
@@ -410,14 +415,14 @@ static ssize_t identify_value_string_end(const string str) {
   }
 
   if (str.str[start] == '{') {
-    for (ssize_t i = start + 1; i < (ssize_t)str.len; i++) {
+    for (i = start + 1; i < (ssize_t)str.len; i++) {
       if (str.str[i] == '"') in_quotes = !in_quotes;
       else if (str.str[i] == '}' && !in_quotes) return i + 1;
     }
     return -1;
   }
 
-  for (ssize_t i = start; i < (ssize_t)str.len; i++)
+  for (i = start; i < (ssize_t)str.len; i++)
     if (str.str[i] != ' ') return i;
 
   return -1;
@@ -426,7 +431,8 @@ static ssize_t identify_value_string_end(const string str) {
 static ssize_t find_key_value_terminator(const string str) {
   if (str.str[0] != '[') return -1;
   ssize_t keyend = 0;
-  for (size_t i = 1; i < str.len; i++) {
+  register size_t i;
+  for (i = 1; i < str.len; i++) {
     if (!isalnum(str.str[i]) && str.str[i] != '_') {
       keyend = (ssize_t)i;
       break;
@@ -466,7 +472,8 @@ va_value_t string_to_va_value(const string str, VariableType type) {
         ssize_t last_index = identify_value_string_end(input);
         if (last_index == -1) {
           print_error(_SLIT("Invalid array format"));
-          for (size_t i = 0; i < result._array.size; i++)
+          register size_t i;
+          for (i = 0; i < result._array.size; i++)
             free_va_value((va_value_t*)array_checked_get(result._array, i));
           array_free(&result._array);
           break;
@@ -540,7 +547,8 @@ void free_va_value(va_value_t* value) {
       string__free(value->_str);
       break;
     case VAR_ARRAY:
-      for (size_t i = 0; i < value->_array.size; i++) {
+      register size_t i;
+      for (i = 0; i < value->_array.size; i++) {
         va_value_t* elem = array_checked_get(value->_array, i);
         free_va_value(elem);
       }
@@ -680,7 +688,8 @@ string expand_variables(VariableTable* table, const string input) {
                 string__free(indirect_var_name);
                 indirect_var_name = temp;
               }
-              for (int i = 0; i < table->size; i++) {
+              register int i;
+              for (i = 0; i < table->size; i++) {
                 string temp = string__from(table->variables[i].name);
                 if (string__startswith(temp, indirect_var_name)) {
                   string_builder__append(&sb, temp);
@@ -714,13 +723,14 @@ string expand_variables(VariableTable* table, const string input) {
                 string__free(pattern);
                 pattern = temp;
               }
+              register size_t i;
         
               if (pattern.len == 0) {
-                for (size_t i = 0; i < value.len; i++)
+                for (i = 0; i < value.len; i++)
                   if (convert_all || (!convert_all && i == 0)) value.str[i] = (char)toupper(value.str[i]);
               } else {
                 bool first_found = false;
-                for (size_t i = 0; i < value.len; i++) {
+                for (i = 0; i < value.len; i++) {
                   string temp = string__substring(value, (ssize_t)i, (ssize_t)i+1);
                   if (string__contains(pattern, temp)) {
                     if (convert_all || (!convert_all && !first_found)) {
@@ -748,13 +758,14 @@ string expand_variables(VariableTable* table, const string input) {
                 string__free(pattern);
                 pattern = temp;
               }
+              register size_t i;
         
               if (pattern.len == 0) {
-                for (size_t i = 0; i < value.len; i++)
+                for (i = 0; i < value.len; i++)
                   if (convert_all || (!convert_all && i == 0)) value.str[i] = (char)tolower(value.str[i]);
               } else {
                 bool first_found = false;
-                for (size_t i = 0; i < value.len; i++) {
+                for (i = 0; i < value.len; i++) {
                   string temp = string__substring(value, (ssize_t)i, (ssize_t)i+1);
                   if (string__contains(pattern, temp)) {
                     if (convert_all || (!convert_all && !first_found)) {
@@ -812,7 +823,8 @@ string expand_variables(VariableTable* table, const string input) {
             if (var) {
               if (var_name.str[at_pos + 1] == 'Q') {
                 string_builder__append_char(&sb, '\'');
-                for (size_t i = 0; i < var->str.len; i++) {
+                register size_t i;
+                for (i = 0; i < var->str.len; i++) {
                   if (var->str.str[i] == '\'') {
                     string_builder__append_cstr(&sb, "'\\''");
                   } else {

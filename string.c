@@ -40,14 +40,16 @@ size_t string__length(string s) {
 
 string string__upper(string s) {
   string result = string__create(s.str, s.len);
-  for (size_t i = 0; i < result.len; i++)
+  register size_t i;
+  for (i = 0; i < result.len; i++)
     result.str[i] = (char)toupper(result.str[i]);
   return result;
 }
 
 string string__lower(string s) {
   string result = string__create(s.str, s.len);
-  for (size_t i = 0; i < result.len; i++)
+  register size_t i;
+  for (i = 0; i < result.len; i++)
     result.str[i] = (char)tolower(result.str[i]);
   return result;
 }
@@ -123,7 +125,8 @@ string string__concat_many(int count, ...) {
   va_start(args, count);
     
   size_t total_len = 0;
-  for (int i = 0; i < count; i++) {
+  register int i;
+  for (i = 0; i < count; i++) {
     string s = va_arg(args, string);
     total_len += s.len;
   }
@@ -136,7 +139,7 @@ string string__concat_many(int count, ...) {
     
   va_start(args, count);
   size_t pos = 0;
-  for (int i = 0; i < count; i++) {
+  for (i = 0; i < count; i++) {
     string s = va_arg(args, string);
     memcpy(new_str + pos, s.str, s.len);
     pos += s.len;
@@ -163,7 +166,8 @@ bool string__endswith(string s, string suffix) {
 
 ssize_t string__indexof(string s, string substr) {
   if (substr.len > s.len) return -1;
-  for (size_t i = 0; i <= s.len - substr.len; i++) {
+  register size_t i;
+  for (i = 0; i <= s.len - substr.len; i++) {
     if (memcmp(s.str + i, substr.str, substr.len) == 0)
       return (ssize_t)i;
   }
@@ -172,7 +176,8 @@ ssize_t string__indexof(string s, string substr) {
 
 ssize_t string__lastindexof(string s, string substr) {
   if (substr.len > s.len) return -1;
-  for (size_t i = s.len - substr.len; i != (size_t)-1; i--) {
+  register size_t i;
+  for (i = s.len - substr.len; i != (size_t)-1; i--) {
     if (memcmp(s.str + i, substr.str, substr.len) == 0)
       return (ssize_t)i;
   }
@@ -181,7 +186,8 @@ ssize_t string__lastindexof(string s, string substr) {
 
 ssize_t string__indexof_any(string s, string substrs[]) {
   ssize_t min_index = -1;
-  for (size_t i = 0; substrs[i].str != NULL; i++) {
+  register size_t i;
+  for (i = 0; substrs[i].str != NULL; i++) {
     ssize_t index = string__indexof(s, substrs[i]);
     if (index != (ssize_t)-1 && index < min_index)
       min_index = index;
@@ -191,7 +197,8 @@ ssize_t string__indexof_any(string s, string substrs[]) {
 
 ssize_t string__lastindexof_any(string s, string substrs[]) {
   ssize_t max_index = -1;
-  for (ssize_t i = 0; substrs[i].str != NULL; i++) {
+  register ssize_t i;
+  for (i = 0; substrs[i].str != NULL; i++) {
     ssize_t index = string__lastindexof(s, substrs[i]);
     if (index != -1 && index > max_index)
       max_index = index;
@@ -241,7 +248,8 @@ StringArray string__split(string s, string delim) {
 
 string string__join(StringArray strings, string delim) {
   size_t total_len = 0;
-  for (size_t i = 0; i < strings.size; i++) {
+  register size_t i;
+  for (i = 0; i < strings.size; i++) {
     string s = *(string*)array_get(strings, i);
     total_len += s.len;
   }
@@ -251,7 +259,7 @@ string string__join(StringArray strings, string delim) {
   char* result = (char*)rmalloc(result_len + 1);
     
   size_t pos = 0;
-  for (size_t i = 0; i < strings.size; i++) {
+  for (i = 0; i < strings.size; i++) {
     string s = *(string*)array_get(strings, i);
     memcpy(result + pos, s.str, s.len);
     pos += s.len;
@@ -302,7 +310,8 @@ bool string__is_null_or_empty(string s) {
 
 bool string__is_null_or_whitespace(string s) {
   if (s.str == NULL) return true;
-  for (size_t i = 0; i < s.len; i++)
+  register size_t i;
+  for (i = 0; i < s.len; i++)
     if (!isspace((unsigned char)s.str[i])) return false;
   return true;
 }
@@ -319,7 +328,8 @@ string string__zfill(string s, size_t width) {
 
 string string__reverse(string s) {
   char* new_str = (char*)rmalloc(s.len + 1);
-  for (size_t i = 0; i < s.len; i++)
+  register size_t i;
+  for (i = 0; i < s.len; i++)
     new_str[i] = s.str[s.len - 1 - i];
   new_str[s.len] = '\0';
   return (string){.str = new_str, .len = s.len, .is_lit = 0};
@@ -328,7 +338,8 @@ string string__reverse(string s) {
 string string__repeat(string s, size_t count) {
   size_t new_len = s.len * count;
   char* new_str = (char*)rmalloc(new_len + 1);
-  for (size_t i = 0; i < count; i++)
+  register size_t i;
+  for (i = 0; i < count; i++)
     memcpy(new_str + i * s.len, s.str, s.len);
   new_str[new_len] = '\0';
   return (string){.str = new_str, .len = new_len, .is_lit = 0};
@@ -338,7 +349,8 @@ string string__capitalize(string s) {
   if (s.len == 0) return string__create("", 0);
   char* new_str = (char*)rmalloc(s.len + 1);
   new_str[0] = (char)toupper((unsigned char)s.str[0]);
-  for (size_t i = 1; i < s.len; i++)
+  register size_t i;
+  for (i = 1; i < s.len; i++)
     new_str[i] = (char)tolower((unsigned char)s.str[i]);
   new_str[s.len] = '\0';
   return (string){.str = new_str, .len = s.len, .is_lit = 0};
@@ -346,7 +358,8 @@ string string__capitalize(string s) {
 
 string string__swapcase(string s) {
   char* new_str = (char*)rmalloc(s.len + 1);
-  for (size_t i = 0; i < s.len; i++) {
+  register size_t i;
+  for (i = 0; i < s.len; i++) {
     if (isupper((unsigned char)s.str[i])) {
       new_str[i] = (char)tolower((unsigned char)s.str[i]);
     } else if (islower((unsigned char)s.str[i])) {
@@ -390,7 +403,8 @@ string string__remove_quotes(string s) {
 
 bool string__isdigit(string s) {
   if (s.len == 0) return false;
-  for (size_t i = 0; i < s.len; i++)
+  register size_t i;
+  for (i = 0; i < s.len; i++)
     if (!isdigit((unsigned char)s.str[i])) return false;
   return true;
 }
@@ -401,34 +415,39 @@ bool string__isdecimal(string s) {
 
 bool string__isalpha(string s) {
   if (s.len == 0) return false;
-  for (size_t i = 0; i < s.len; i++)
+  register size_t i;
+  for (i = 0; i < s.len; i++)
     if (!isalpha((unsigned char)s.str[i])) return false;
   return true;
 }
 
 bool string__isalnum(string s) {
   if (s.len == 0) return false;
-  for (size_t i = 0; i < s.len; i++)
+  register size_t i;
+  for (i = 0; i < s.len; i++)
     if (!isalnum((unsigned char)s.str[i])) return false;
   return true;
 }
 
 bool string__isprintable(string s) {
-  for (size_t i = 0; i < s.len; i++)
+  register size_t i;
+  for (i = 0; i < s.len; i++)
     if (!isprint((unsigned char)s.str[i])) return false;
   return true;
 }
 
 bool string__isupper(string s) {
   if (s.len == 0) return false;
-  for (size_t i = 0; i < s.len; i++)
+  register size_t i;
+  for (i = 0; i < s.len; i++)
     if (!isupper((unsigned char)s.str[i]) && isalpha((unsigned char)s.str[i])) return false;
   return true;
 }
 
 bool string__islower(string s) {
   if (s.len == 0) return false;
-  for (size_t i = 0; i < s.len; i++)
+  register size_t i;
+  for (i = 0; i < s.len; i++)
     if (!islower((unsigned char)s.str[i]) && isalpha((unsigned char)s.str[i])) return false;
   return true;
 }
@@ -436,7 +455,8 @@ bool string__islower(string s) {
 bool string__istitle(string s) {
   if (s.len == 0) return false;
   bool prev_is_cased = false;
-  for (size_t i = 0; i < s.len; i++) {
+  register size_t i;
+  for (i = 0; i < s.len; i++) {
     if (isalpha((unsigned char)s.str[i])) {
       if ((prev_is_cased && isupper((unsigned char)s.str[i])) ||
           (!prev_is_cased && islower((unsigned char)s.str[i]))) {
@@ -453,7 +473,8 @@ bool string__istitle(string s) {
 bool string__isidentifier(string s) {
   if (s.len == 0) return false;
   if (!isalpha((unsigned char)s.str[0]) && s.str[0] != '_') return false;
-  for (size_t i = 1; i < s.len; i++)
+  register size_t i;
+  for (i = 1; i < s.len; i++)
     if (!isalnum((unsigned char)s.str[i]) && s.str[i] != '_') return false;
   return true;
 }
@@ -461,7 +482,8 @@ bool string__isidentifier(string s) {
 char string__min(string s) {
   if (s.len == 0) return '\0';
   char min_char = s.str[0];
-  for (size_t i = 1; i < s.len; i++) {
+  register size_t i;
+  for (i = 1; i < s.len; i++) {
     if (s.str[i] < min_char)
       min_char = s.str[i];
   }
@@ -471,7 +493,8 @@ char string__min(string s) {
 char string__max(string s) {
   if (s.len == 0) return '\0';
   char max_char = s.str[0];
-  for (size_t i = 1; i < s.len; i++) {
+  register size_t i;
+  for (i = 1; i < s.len; i++) {
     if (s.str[i] > max_char) {
       max_char = s.str[i];
     }
@@ -480,12 +503,14 @@ char string__max(string s) {
 }
 
 void rstring__upper(string s) {
-  for (size_t i = 0; i < s.len; i++)
+  register size_t i;
+  for (i = 0; i < s.len; i++)
     s.str[i] = (char)toupper(s.str[i]);
 }
 
 void rstring__lower(string s) {
-  for (size_t i = 0; i < s.len; i++)
+  register size_t i;
+  for (i = 0; i < s.len; i++)
     s.str[i] = (char)tolower(s.str[i]);
 }
 

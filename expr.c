@@ -65,7 +65,7 @@ bool add_redirect(Command* cmd, RedirectType type, int fd, const string target) 
   return true;
 }
 
-bool add_pipeline(Command* cmd, Command* next) {
+bool add_pipeline(Command* __restrict cmd, Command* __restrict next) {
   if (cmd == NULL || next == NULL) return false;
   Command* last = cmd;
   while (last->next != NULL) {
@@ -98,7 +98,7 @@ bool add_command(CommandList* list, Command* cmd) {
   return true;
 }
 
-bool append_command_list(CommandList* dest, CommandList* src) {
+bool append_command_list(CommandList* __restrict dest, CommandList* __restrict src) {
   if (dest == NULL || src == NULL) return false;
   
   if (dest->head == NULL) {

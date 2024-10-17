@@ -7,7 +7,8 @@
 #include "error.h"
 
 int handle_redirection(Command* cmd) {
-  for (size_t i = 0; i < cmd->redirects.size; i++) {
+  register size_t i;
+  for (i = 0; i < cmd->redirects.size; i++) {
     Redirect* redir = &cmd->redirects.data[i];
     int flags, fd;
 

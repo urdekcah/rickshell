@@ -39,7 +39,8 @@ MapResult resize_map(map* m, size_t new_capacity) {
   if (!m || new_capacity < m->size) return Err((void*)MAP_ERROR_INVALID_ARGUMENT);
   map_kv *new_buckets = (map_kv*)calloc(new_capacity, sizeof(map_kv));
   if (!new_buckets) return Err((void*)MAP_ERROR_MEMORY);
-  for (size_t i = 0; i < m->capacity; i++) {
+  register size_t i;
+  for (i = 0; i < m->capacity; i++) {
     if (m->buckets[i].is_occupied) {
       size_t index = wyhash(m->buckets[i].key, strlen(m->buckets[i].key), 0, _wyp) % new_capacity;
       while (new_buckets[index].is_occupied) {
@@ -165,7 +166,8 @@ bool map_remove(map* m, const char* key) {
 void map_free(map* m) {
   if (!m) return;
   pthread_mutex_lock(&m->lock);
-  for (size_t i = 0; i < m->capacity; i++) {
+  register size_t i;
+  for (i = 0; i < m->capacity; i++) {
     if (m->buckets[i].is_occupied) {
       free(m->buckets[i].key);
       if (m->value_free) m->value_free(m->buckets[i].value);

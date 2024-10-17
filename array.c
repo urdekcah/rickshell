@@ -137,7 +137,8 @@ void array_push(array* a, void* value) {
 
 void array_push_repeat(array* a, void* value, size_t num) {
   if (array_has_flag(a, ArrayFlag_Fixed)) return;
-  for (size_t i = 0; i < num; i++)
+  register size_t i;
+  for (i = 0; i < num; i++)
     array_push(a, value);
 }
 
@@ -149,7 +150,8 @@ void array_push_repeat_index(array* a, size_t index, void* value, size_t num) {
   memmove((char*)a->data + (index + num) * a->element_size,
           (char*)a->data + index * a->element_size,
           (a->size - index) * a->element_size);
-  for (size_t i = 0; i < num; i++) {
+  register size_t i;
+  for (i = 0; i < num; i++) {
     memcpy((char*)a->data + (index + i) * a->element_size, value, a->element_size);
   }
   a->size = new_size;

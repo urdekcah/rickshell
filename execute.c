@@ -35,6 +35,7 @@ int rexecvp(const string __file, StringArray __argv) {
   }
 
   size_t argc = __argv.size;
+  register size_t i;
 
   char** argv_cstr = malloc((argc + 1) * sizeof(char*));
   if (!argv_cstr) {
@@ -43,7 +44,7 @@ int rexecvp(const string __file, StringArray __argv) {
     return -1;
   }
 
-  for (size_t i = 0; i < argc; i++) {
+  for (i = 0; i < argc; i++) {
     string* arg = array_get(__argv, i);
     argv_cstr[i] = string__to_cstr(*arg);
     if (!argv_cstr[i]) {
@@ -60,7 +61,7 @@ int rexecvp(const string __file, StringArray __argv) {
 
   int saved_errno = errno;
 
-  for (size_t i = 0; i < argc; i++)
+  for (i = 0; i < argc; i++)
     free(argv_cstr[i]);
   free(argv_cstr);
   free(file_cstr);
@@ -70,12 +71,13 @@ int rexecvp(const string __file, StringArray __argv) {
 }
 
 int execute_command(Command* cmd) {
+  register size_t i;
   if (cmd == NULL || cmd->argv.size == 0 || string__is_null_or_empty(*(string*)array_get(cmd->argv, 0))) {
     print_error(_SLIT("Invalid command"));
     return -1;
   }
 
-  for (size_t i = 0; i < cmd->argv.size; i++) {
+  for (i = 0; i < cmd->argv.size; i++) {
     string elem = *(string*)array_get(cmd->argv, i);
     string expanded = expand_variables(variable_table, elem);
     string__free(elem);
@@ -143,7 +145,7 @@ int execute_command(Command* cmd) {
     StringArray _argv = array_clone_from(cmd->argv);
     array_free(&cmd->argv);
     cmd->argv = create_array_with_capacity(sizeof(string), _argv.capacity);
-    for (size_t i = 0; i < _argv.size; i++) {
+    for (i = 0; i < _argv.size; i++) {
       string elem = *(string*)array_get(_argv, i);
       if (string__length(elem) > 0 && string__indexof(elem, _SLIT("=")) != -1) {
         if (i + 1 < _argv.size) {
@@ -199,9 +201,10 @@ int execute_command(Command* cmd) {
 
 string command_to_string(Command* cmd) {
   if (cmd == NULL) return _SLIT0;
+  register size_t i;
 
   StringBuilder sb = string_builder__new();
-  for (size_t i = 0; i < cmd->argv.size; i++) {
+  for (i = 0; i < cmd->argv.size; i++) {
     string elem = *(string*)array_get(cmd->argv, i);
     string_builder__append(&sb, elem);
     if (i < cmd->argv.size - 1) {
@@ -209,7 +212,7 @@ string command_to_string(Command* cmd) {
     }
   }
 
-  for (size_t i = 0; i < cmd->redirects.size; i++) {
+  for (i = 0; i < cmd->redirects.size; i++) {
     Redirect* redir = &cmd->redirects.data[i];
     string redir_str = _SLIT0;
     switch (redir->type) {

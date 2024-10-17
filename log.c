@@ -75,7 +75,6 @@ void log_init(const LogConfig* config) {
   if (!string__is_null_or_empty(config->filename)) {
     char* fname = expand_home_directory(config->filename.str);
     log_ctx.filename = string__new(fname);
-    rfree(fname);
     ensure_log_file_open();
   }
 

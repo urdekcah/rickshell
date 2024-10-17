@@ -175,6 +175,7 @@ static void format_integer(char* buffer, size_t buffer_size, uintmax_t value, Fo
   int min_width = (spec->precision > len) ? spec->precision : len;
   size_t padding = (spec->width > min_width) ? (size_t)(spec->width - min_width) : 0;
   size_t total_len = (size_t)min_width + padding;
+  register ssize_t i;
 
   if (total_len >= buffer_size) {
     total_len = buffer_size - 1;
@@ -184,21 +185,21 @@ static void format_integer(char* buffer, size_t buffer_size, uintmax_t value, Fo
   size_t index = 0;
   if (!spec->left_justify) {
     char pad_char = (spec->zero_pad && spec->precision < 0) ? '0' : ' ';
-    for (size_t i = 0; i < padding; i++) {
+    for (i = 0; i < (ssize_t)padding; i++) {
       buffer[index++] = pad_char;
     }
   }
 
-  for (int i = len; i < min_width; i++) {
+  for (i = (ssize_t)len; i < min_width; i++) {
     buffer[index++] = '0';
   }
 
-  for (int i = len - 1; i >= 0; i--) {
+  for (i = (ssize_t)len - 1; i >= 0; i--) {
     buffer[index++] = tmp[i];
   }
 
   if (spec->left_justify) {
-    for (size_t i = 0; i < padding; i++) {
+    for (i = 0; i < (ssize_t)padding; i++) {
       buffer[index++] = ' ';
     }
   }
