@@ -13,6 +13,7 @@ typedef struct {
 int builtin_cd(Command* cmd);
 int builtin_declare(Command *cmd);
 int builtin_echo(Command *cmd);
+int builtin_exit(Command *cmd);
 int builtin_export(Command *cmd);
 int builtin_readonly(Command *cmd);
 int builtin_set(Command *cmd);

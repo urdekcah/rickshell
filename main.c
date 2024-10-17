@@ -25,16 +25,8 @@
 
 extern int yylex_destroy(void);
 
-static volatile sig_atomic_t keep_running = 1;
-
-static void handle_sigint(int sig) {
-  (void)sig;  // Unused parameter 
-  keep_running = 0;
-  const char msg[] = "\nUse 'exit' to quit the shell.\n> ";
-  if (write(STDOUT_FILENO, msg, sizeof(msg) - 1) == -1) {
-    _exit(EXIT_FAILURE);
-  }
-}
+volatile sig_atomic_t keep_running = 1;
+volatile int last_status = 0;
 
 static char* get_hostname(void) {
   char* hostname = NULL;
@@ -102,6 +94,13 @@ static void print_prompt(void) {
   rfree(cwd);
 }
 
+static void handle_sigint(int sig) {
+  (void)sig;
+  keep_running = 0;
+  println(_SLIT0);
+  print_prompt();
+}
+
 static string get_input() {
   StringBuilder sb = string_builder__new();
   char buffer[INITIAL_BUFFER_SIZE];
@@ -160,7 +159,6 @@ static int setup_signal_handler(void) {
 }
 
 static int process_command(const string input) {
-  if (string__compare(input, _SLIT("exit")) == 0) return 1;
   parse_and_execute(input);
   return 0;
 }
@@ -198,7 +196,7 @@ int main(void) {
       string__free(input);
       if (feof(stdin)) {
         println(_SLIT0);
-        println(_SLIT("End of input. Exiting..."));
+        println(_SLIT("exit"));
         break;
       }
       continue;
@@ -223,5 +221,5 @@ int main(void) {
   log_info("Shell exited");
   log_shutdown();
 
-  return EXIT_SUCCESS;
+  return last_status;
 }
