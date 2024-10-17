@@ -10,6 +10,7 @@ static builtin_command builtin_commands[] = {
   {_SLIT("echo"), builtin_echo},
   {_SLIT("exit"), builtin_exit},
   {_SLIT("export"), builtin_export},
+  {_SLIT("printf"), builtin_printf},
   {_SLIT("readonly"), builtin_readonly},
   {_SLIT("set"), builtin_set},
   {_SLIT("unset"), builtin_unset},

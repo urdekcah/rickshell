@@ -15,6 +15,7 @@ int builtin_declare(Command *cmd);
 int builtin_echo(Command *cmd);
 int builtin_exit(Command *cmd);
 int builtin_export(Command *cmd);
+int builtin_printf(Command *cmd);
 int builtin_readonly(Command *cmd);
 int builtin_set(Command *cmd);
 int builtin_unset(Command *cmd);
