@@ -4,14 +4,6 @@
 #include "result.h"
 #include "rstring.h"
 
-typedef enum {
-  STRCONV_SUCCESS = 0,
-  STRCONV_CONVERSION_ERROR,
-  STRCONV_OVERFLOW,
-  STRCONV_UNDERFLOW,
-  STRCONV_INVALID_INPUT
-} StrconvErrCode;
-
 StrconvResult ratoi(const string str, int* out);
 StrconvResult ratol(const string str, long* out);
 StrconvResult ratoll(const string str, long long* out);

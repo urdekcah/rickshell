@@ -12,77 +12,119 @@
 #include "io.h"
 
 StrconvResult ratoi(const string str, int* out) {
-  if (string__is_null_or_empty(str) || out == NULL) return Err((void*)STRCONV_INVALID_INPUT);
+  if (string__is_null_or_empty(str) || out == NULL) return Err(
+    _SLIT("Invalid input"),
+    ERRCODE_INVALID_INPUT
+  );
   char *endptr;
   errno = 0;
   long val = strtol(str.str, &endptr, 10);
   if (errno == ERANGE) {
-    long ecode = (val == LONG_MAX) ? STRCONV_OVERFLOW : STRCONV_UNDERFLOW;
-    return Err((void*)ecode);
+    return Err(
+      _SLIT("Failed to convert string to int"),
+      (val == LONG_MAX) ? ERRCODE_STRCONV_OVERFLOW : ERRCODE_STRCONV_UNDERFLOW
+    );
   }
-  if (endptr == str.str || *endptr != '\0') return Err((void*)STRCONV_INVALID_INPUT);
+  if (endptr == str.str || *endptr != '\0') return Err(
+    _SLIT("Invalid input"),
+    ERRCODE_INVALID_INPUT
+  );
   if (val > INT_MAX || val < INT_MIN) {
-    long ecode = (val > 0) ? STRCONV_OVERFLOW : STRCONV_UNDERFLOW;
-    return Err((void*)ecode);
+    return Err(
+      _SLIT("Failed to convert string to int"),
+      (val > 0) ? ERRCODE_STRCONV_OVERFLOW : ERRCODE_STRCONV_UNDERFLOW
+    );
   }
   *out = (int)val;
-  return Ok((void*)STRCONV_SUCCESS);
+  return Ok(NULL);
 }
 
 StrconvResult ratol(const string str, long* out) {
-  if (string__is_null_or_empty(str) || out == NULL) return Err((void*)STRCONV_INVALID_INPUT);
+  if (string__is_null_or_empty(str) || out == NULL) return Err(
+    _SLIT("Invalid input"),
+    ERRCODE_INVALID_INPUT
+  );
   char *endptr;
   errno = 0;
   long val = strtol(str.str, &endptr, 10);
   if (errno == ERANGE) {
-    long ecode = (val == LONG_MAX) ? STRCONV_OVERFLOW : STRCONV_UNDERFLOW;
-    return Err((void*)ecode);
+    return Err(
+      _SLIT("Failed to convert string to long"),
+      (val == LONG_MAX) ? ERRCODE_STRCONV_OVERFLOW : ERRCODE_STRCONV_UNDERFLOW
+    );
   }
-  if (endptr == str.str || *endptr != '\0') return Err((void*)STRCONV_INVALID_INPUT);
+  if (endptr == str.str || *endptr != '\0') return Err(
+    _SLIT("Invalid input"),
+    ERRCODE_INVALID_INPUT
+  );
   *out = val;
-  return Ok((void*)STRCONV_SUCCESS);
+  return Ok(NULL);
 }
 
 StrconvResult ratoll(const string str, long long* out) {
-  if (string__is_null_or_empty(str) || out == NULL) return Err((void*)STRCONV_INVALID_INPUT);
+  if (string__is_null_or_empty(str) || out == NULL) return Err(
+    _SLIT("Invalid input"),
+    ERRCODE_INVALID_INPUT
+  );
   char *endptr;
   errno = 0;
   long long val = strtoll(str.str, &endptr, 10);
   if (errno == ERANGE) {
-    long ecode = (val == LLONG_MAX) ? STRCONV_OVERFLOW : STRCONV_UNDERFLOW;
-    return Err((void*)ecode);
+    return Err(
+      _SLIT("Failed to convert string to long long"),
+      (val == LLONG_MAX) ? ERRCODE_STRCONV_OVERFLOW : ERRCODE_STRCONV_UNDERFLOW
+    );
   }
-  if (endptr == str.str || *endptr != '\0') return Err((void*)STRCONV_INVALID_INPUT);
+  if (endptr == str.str || *endptr != '\0') return Err(
+    _SLIT("Invalid input"),
+    ERRCODE_INVALID_INPUT
+  );
   *out = val;
-  return Ok((void*)STRCONV_SUCCESS);
+  return Ok(NULL);
 }
 
 StrconvResult ratof(const string str, float* out) {
-  if (string__is_null_or_empty(str) || out == NULL) return Err((void*)STRCONV_INVALID_INPUT);
+  if (string__is_null_or_empty(str) || out == NULL) return Err(
+    _SLIT("Invalid input"),
+    ERRCODE_INVALID_INPUT
+  );
   char *endptr;
   errno = 0;
   float val = strtof(str.str, &endptr);
   if (errno == ERANGE) {
-    long ecode = (val == HUGE_VALF) ? STRCONV_OVERFLOW : STRCONV_UNDERFLOW;
-    return Err((void*)ecode);
+    return Err(
+      _SLIT("Failed to convert string to float"),
+      (val == HUGE_VALF) ? ERRCODE_STRCONV_OVERFLOW : ERRCODE_STRCONV_UNDERFLOW
+    );
   }
-  if (endptr == str.str || *endptr != '\0') return Err((void*)STRCONV_INVALID_INPUT);
+  if (endptr == str.str || *endptr != '\0') return Err(
+    _SLIT("Invalid input"),
+    ERRCODE_INVALID_INPUT
+  );
   *out = val;
-  return Ok((void*)STRCONV_SUCCESS);
+  return Ok(NULL);
 }
 
 StrconvResult ratod(const string str, double* out) {
-  if (string__is_null_or_empty(str) || out == NULL) return Err((void*)STRCONV_INVALID_INPUT);
+  if (string__is_null_or_empty(str) || out == NULL) return Err(
+    _SLIT("Invalid input"),
+    ERRCODE_INVALID_INPUT
+  );
   char *endptr;
   errno = 0;
   double val = strtod(str.str, &endptr);
   if (errno == ERANGE) {
-    long ecode = (val == HUGE_VAL) ? STRCONV_OVERFLOW : STRCONV_UNDERFLOW;
-    return Err((void*)ecode);
+    return Err(
+      _SLIT("Failed to convert string to double"),
+      (val == HUGE_VAL) ? ERRCODE_STRCONV_OVERFLOW : ERRCODE_STRCONV_UNDERFLOW
+    );
   }
-  if (endptr == str.str || *endptr != '\0') return Err((void*)STRCONV_INVALID_INPUT);
+  if (endptr == str.str || *endptr != '\0') return Err(
+    _SLIT("Invalid input"),
+    ERRCODE_INVALID_INPUT
+  );
   *out = val;
-  return Ok((void*)STRCONV_SUCCESS);
+  return Ok(NULL);
 }
 
 StrconvResult ritoa(int value) {
@@ -92,7 +134,10 @@ StrconvResult ritoa(int value) {
   string_builder__free(&sb);
   if (string__is_null_or_empty(s)) {
     string__free(s);
-    return Err((void*)STRCONV_CONVERSION_ERROR);
+    return Err(
+      _SLIT("Failed to convert int to string"),
+      ERRCODE_STRCONV_CONVERSION_FAILED
+    );
   }
   return Ok((void*)&s);
 }
@@ -104,7 +149,10 @@ StrconvResult rltos(long value) {
   string_builder__free(&sb);
   if (string__is_null_or_empty(s)) {
     string__free(s);
-    return Err((void*)STRCONV_CONVERSION_ERROR);
+    return Err(
+      _SLIT("Failed to convert long to string"),
+      ERRCODE_STRCONV_CONVERSION_FAILED
+    );
   }
   return Ok((void*)&s);
 }
@@ -116,7 +164,10 @@ StrconvResult rlltos(long long value) {
   string_builder__free(&sb);
   if (string__is_null_or_empty(s)) {
     string__free(s);
-    return Err((void*)STRCONV_CONVERSION_ERROR);
+    return Err(
+      _SLIT("Failed to convert long long to string"),
+      ERRCODE_STRCONV_CONVERSION_FAILED
+    );
   }
   return Ok((void*)&s);
 }
@@ -128,7 +179,10 @@ StrconvResult rftos(float value) {
   string_builder__free(&sb);
   if (string__is_null_or_empty(s)) {
     string__free(s);
-    return Err((void*)STRCONV_CONVERSION_ERROR);
+    return Err(
+      _SLIT("Failed to convert float to string"),
+      ERRCODE_STRCONV_CONVERSION_FAILED
+    );
   }
   return Ok((void*)&s);
 }
@@ -140,7 +194,10 @@ StrconvResult rdtos(double value) {
   string_builder__free(&sb);
   if (string__is_null_or_empty(s)) {
     string__free(s);
-    return Err((void*)STRCONV_CONVERSION_ERROR);
+    return Err(
+      _SLIT("Failed to convert double to string"),
+      ERRCODE_STRCONV_CONVERSION_FAILED
+    );
   }
   return Ok((void*)&s);
 }

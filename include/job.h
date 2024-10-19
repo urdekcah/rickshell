@@ -1,6 +1,5 @@
 #ifndef __RICKSHELL_JOB_H__
 #define __RICKSHELL_JOB_H__
-
 #include <sys/types.h>
 #include "expr.h"
 
