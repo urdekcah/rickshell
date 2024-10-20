@@ -2,6 +2,7 @@
 #define __RICKSHELL_REDIRECT_H__
 #include <stdbool.h>
 #include "expr.h"
+#include "result.h"
 
 enum RedirectType {
   REDIRECT_INPUT,
@@ -19,5 +20,5 @@ struct Redirect {
   bool is_fd;
 };
 
-int handle_redirection(Command* cmd);
+IntResult handle_redirection(Command* cmd);
 #endif /* __RICKSHELL_REDIRECT_H__ */

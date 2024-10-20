@@ -67,11 +67,8 @@ static int process_escape(const string str, int *i) {
             break;
           }
         }
-        UnicodeError err = unicode_to_utf8(unicode, utf8_buffer, sizeof(utf8_buffer), &utf8_len);
-        if (err == UNICODE_SUCCESS) {
-          for (size_t k = 0; k < utf8_len; k++)
-            fprintf(stderr, "%02X ", (unsigned char)utf8_buffer[k]);
-          fprintf(stderr, "\n");
+        UnicodeResult ur = unicode_to_utf8(unicode, utf8_buffer, sizeof(utf8_buffer), &utf8_len);
+        if (!ur.is_err) {
           fwrite(utf8_buffer, 1, utf8_len, stdout);
         }
         *i += j - 1;
