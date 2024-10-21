@@ -111,23 +111,28 @@ void update_job_status(void) {
   }
 }
 
-int execute_background_job(CommandList* cmds, const string command_line) {
+IntResult execute_background_job(CommandList* cmds, const string command_line, int* result) {
   pid_t pid = fork();
+
+  *result = 0;
 
   if (pid == 0) {
     setpgid(0, 0);
-    int status = execute_command_list(cmds);
-    exit(status);
+    *result = -1;
+    execute_command_list(cmds, result);
+    exit(*result);
   } else if (pid > 0) {
     setpgid(pid, pid);
     Job* job = add_job(pid, cmds, command_line);
     if (job) {
       fprintln("[%d] %d", job->job_id, pid);
     }
-    return 0;
+    return Ok(NULL);
   } else {
-    print_error(_SLIT("Failed to fork for background job"));
-    return -1;
+    return Err(
+      _SLIT("Failed to fork for background job"),
+      ERRCODE_EXEC_FORK_FAILED
+    );
   }
 }
 

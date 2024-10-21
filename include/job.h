@@ -1,8 +1,8 @@
 #ifndef __RICKSHELL_JOB_H__
 #define __RICKSHELL_JOB_H__
-
 #include <sys/types.h>
 #include "expr.h"
+#include "result.h"
 
 typedef struct Job {
   int job_id;
@@ -24,7 +24,12 @@ Job* add_job(pid_t pgid, CommandList* cmds, const string command_line);
 void remove_job(Job* job);
 Job* find_job(int job_id);
 void update_job_status(void);
-int execute_background_job(CommandList* cmds, const string command_line);
+/**
+ * @param[in]  cmds
+ * @param[in]  command_line
+ * @param[out] result
+ */
+IntResult execute_background_job(CommandList* cmds, const string command_line, int* result);
 void print_jobs(void);
 void cleanup_jobs(void);
 void print_job_status(void);

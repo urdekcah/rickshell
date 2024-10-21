@@ -25,14 +25,6 @@ typedef struct {
   MapFreeFn value_free;
 } map;
 
-typedef enum {
-  MAP_OK,
-  MAP_ERROR_MEMORY,
-  MAP_ERROR_KEY_NOT_FOUND,
-  MAP_ERROR_KEY_EXISTS,
-  MAP_ERROR_INVALID_ARGUMENT
-} MapErrCode;
-
 map* create_map_with_func(MapFreeFn value_free);
 map* create_map();
 MapResult resize_map(map* m, size_t new_capacity);

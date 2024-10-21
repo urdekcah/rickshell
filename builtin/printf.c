@@ -72,9 +72,9 @@ static string process_escape_sequences(const string input) {
           i += (size_t)j - 1;
           char utf8_buffer[5] = {0};
           size_t utf8_len;
-          if (unicode_to_utf8(unicode, utf8_buffer, sizeof(utf8_buffer), &utf8_len) == UNICODE_SUCCESS) {
+          UnicodeResult ur = unicode_to_utf8(unicode, utf8_buffer, sizeof(utf8_buffer), &utf8_len);
+          if (!ur.is_err)
             string_builder__append_cstr(&sb, utf8_buffer);
-          }
           break;
         }
         default:

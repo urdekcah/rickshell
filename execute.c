@@ -70,12 +70,12 @@ int rexecvp(const string __file, StringArray __argv) {
   return result;
 }
 
-int execute_command(Command* cmd) {
+IntResult execute_command(Command* cmd, int* result) {
   register size_t i;
-  if (cmd == NULL || cmd->argv.size == 0 || string__is_null_or_empty(*(string*)array_get(cmd->argv, 0))) {
-    print_error(_SLIT("Invalid command"));
-    return -1;
-  }
+  if (cmd == NULL || cmd->argv.size == 0 || string__is_null_or_empty(*(string*)array_get(cmd->argv, 0))) return Err(
+    _SLIT("Invalid command"),
+    ERRCODE_INVALID_ARGUMENT
+  );
 
   for (i = 0; i < cmd->argv.size; i++) {
     string elem = *(string*)array_get(cmd->argv, i);
@@ -110,18 +110,22 @@ int execute_command(Command* cmd) {
         set_associative_array_variable(variable_table, _name, key, _value);
       } else if (var != NULL && var->value.type == VAR_ARRAY) {
         long long index;
-        StrconvResult result = ratoll(key, &index);
-        if (result.is_err) {
-          print_error(_SLIT("Invalid key for associative array"));
+        StrconvResult _result = ratoll(key, &index);
+        if (_result.is_err) {
           string__free(_name);
           string__free(_value);
           string__free(key);
-          return -1;
+          return Err(
+            _SLIT("Invalid key for array"),
+            ERRCODE_ARRAY_INVALID_INDEX
+          );
         }
         array_set_element(variable_table, _name, (size_t)index, _value);
       } else {
-        print_error(_SLIT("Variable is not an array or associative array"));
-        return -1;
+        return Err(
+          _SLIT("Variable is not an array or associative array"),
+          ERRCODE_VAR_TYPE_DISMATCH
+        );
       }
       string__free(_name);
       string__free(_value);
@@ -135,12 +139,15 @@ int execute_command(Command* cmd) {
       if (var == NULL) {
         string__free(name);
         string__free(value);
-        return -1;
+        return Err(
+          _SLIT("Failed to set variable"),
+          ERRCODE_VAR_SET_FAILED
+        );
       }
     }
     string__free(name);
     string__free(value);
-    return 0;
+    return Ok(NULL);
   } else if (should_not_expand) {
     StringArray _argv = array_clone_from(cmd->argv);
     array_free(&cmd->argv);
@@ -165,16 +172,20 @@ int execute_command(Command* cmd) {
     array_free(&_argv);
   }
 
-  int builtin_result = execute_builtin(cmd);
-  if (builtin_result != -1)
-    return builtin_result;
+  *result = execute_builtin(cmd);
+  if (*result != -1)
+    return Ok(NULL);
 
   pid_t pid = fork();
   if (pid == -1) {
-    print_error(_SLIT("Fork failed"));
-    return -1;
+    return Err(
+      _SLIT("Fork failed"),
+      ERRCODE_EXEC_FORK_FAILED
+    );
   } else if (pid == 0) {
-    if (handle_redirection(cmd) == -1) {
+    Result r = handle_redirection(cmd);
+    if (r.is_err) {
+      report_error(r);
       _exit(EXIT_FAILURE);
     }
 
@@ -184,19 +195,24 @@ int execute_command(Command* cmd) {
   } else {
     int status;
     if (waitpid(pid, &status, 0) == -1) {
-      print_error(_SLIT("Waitpid failed"));
-      return -1;
+      return Err(
+        _SLIT("Waitpid failed"),
+        ERRCODE_EXEC_WAIT_FAILED
+      );
     }
 
     if (WIFEXITED(status)) {
-      return WEXITSTATUS(status);
+      *result = WEXITSTATUS(status);
+      return Ok(NULL);
     } else if (WIFSIGNALED(status)) {
       ffprintln(stderr, "Command terminated by signal %d", WTERMSIG(status));
-      return 128 + WTERMSIG(status);
+      *result = 128 + WTERMSIG(status);
+      return Ok(NULL);
     }
   }
 
-  return -1;
+  *result = -1;
+  return Ok(NULL);
 }
 
 string command_to_string(Command* cmd) {
@@ -281,13 +297,12 @@ string command_list_to_string(CommandList* list) {
   return result;
 }
 
-int execute_command_list(CommandList* list) {
-  if (list == NULL || list->head == NULL) {
-    print_error(_SLIT("Invalid command list"));
-    return -1;
-  }
+IntResult execute_command_list(CommandList* list, int* result) {
+  if (list == NULL || list->head == NULL) return Err(
+    _SLIT("Invalid command list"),
+    ERRCODE_INVALID_ARGUMENT
+  );
 
-  int status = 0;
   Command* cmd = list->head;
 
   bool background = false;
@@ -299,49 +314,57 @@ int execute_command_list(CommandList* list) {
 
   if (background) {
     string command_line = command_list_to_string(list);
-    if (string__is_null_or_empty(command_line)) return -1;
-    status = execute_background_job(list, command_line);
+    if (string__is_null_or_empty(command_line)) return Err(
+      _SLIT("Failed to convert command list to string"),
+      ERRCODE_ERR
+    );
+    Result r = execute_background_job(list, command_line, result);
     string__free(command_line);
-    return status;
+    NTRY(r);
+    return Ok(NULL);
   }
 
   while (cmd != NULL) {
     if (cmd->pipline_next) {
-      status = execute_pipeline(cmd);
+      Result r = execute_pipeline(cmd, result);
+      NTRY(r);
       while (cmd != NULL && cmd->pipline_next)
         cmd = cmd->next;
     } else {
-      status = execute_command(cmd);
-      if (status != 0 && cmd->and_next)
+      Result r = execute_command(cmd, result);
+      NTRY(r);
+      if (*result != 0 && cmd->and_next)
         break;
-      if (status == 0 && cmd->or_next)
+      if (*result == 0 && cmd->or_next)
         break;
     }
     if (cmd != NULL) cmd = cmd->next;
   }
   
-  return status;
+  return Ok(NULL);
 }
 
-int parse_and_execute(const string input) {
+IntResult parse_and_execute(const string input, int* result) {
   if (string__is_null_or_empty(input)) {
-    print_error(_SLIT("Invalid input"));
-    return -1;
+    return Err(
+      _SLIT("Invalid input"),
+      ERRCODE_INVALID_INPUT
+    );
   }
 
   char* saveptr;
   char* cmd = strtok_r(input.str, ";", &saveptr);
-  int result = 0;
+  *result = 0;
 
   while (cmd != NULL) {
     while (isspace(*cmd)) cmd++;
     if (*cmd != '\0') {
       yy_scan_string(cmd);
       command_list = NULL;
-      result = yyparse();
+      *result = yyparse();
       yylex_destroy();
       
-      if (result == 0) {
+      if (*result == 0) {
         if (command_list != NULL) {
           bool background = false;
           Command* last_cmd = command_list->tail;
@@ -353,25 +376,31 @@ int parse_and_execute(const string input) {
           if (background) {
             string command_line = command_list_to_string(command_list);
             if (!string__is_null_or_empty(command_line)) {
-              execute_background_job(command_list, command_line);
+              Result r = execute_background_job(command_list, command_line, result);
               string__free(command_line);
+              NTRY(r);
             }
           } else {
-            int status = execute_command_list(command_list);
-            (void)status;
+            Result r = execute_command_list(command_list, result);
+            NTRY(r);
           }
           free_command_list(command_list);
           command_list = NULL;
         } else {
-          println(_SLIT("No commands to execute"));
+          return Err(
+            _SLIT("No commands to execute"),
+            ERRCODE_NO_COMMAND_TO_EXECUTE
+          );
         }
       } else {
-        println(_SLIT("Failed to parse the command"));
-        break;
+        return Err(
+          _SLIT("Failed to parse the command"),
+          ERRCODE_COMMAND_PARSE_FAILED
+        );
       }
     }
     cmd = strtok_r(NULL, ";", &saveptr);
   }
   
-  return result;
+  return Ok(NULL);
 }

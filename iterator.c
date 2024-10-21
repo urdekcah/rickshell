@@ -55,7 +55,10 @@ void* map_iterator_get_value(MapIterator* it, size_t* out_value_size) {
 }
 
 MapResult map_iterator_peek(MapIterator* it, const char** out_key, void** out_value, size_t* out_value_size) {
-  if (!it || !it->m) return Err((void*)MAP_ERROR_INVALID_ARGUMENT);
+  if (!it || !it->m) return Err(
+    _SLIT("Invalid argument: iterator or map is NULL"),
+    ERRCODE_MAP_INVALID_ARGUMENT
+  );
   
   size_t current = it->current_index;
   while (current < it->m->capacity) {
@@ -63,11 +66,14 @@ MapResult map_iterator_peek(MapIterator* it, const char** out_key, void** out_va
       if (out_key) *out_key = it->m->buckets[current].key;
       if (out_value) *out_value = it->m->buckets[current].value;
       if (out_value_size) *out_value_size = it->m->buckets[current].value_size;
-      return Ok((void*)MAP_OK);
+      return Ok(NULL);
     }
     current++;
   }
-  return Err((void*)MAP_ERROR_KEY_NOT_FOUND);
+  return Err(
+    _SLIT("No more items in map"),
+    ERRCODE_MAP_KEY_NOT_FOUND
+  );
 }
 
 void map_iterator_reset(MapIterator* it) {

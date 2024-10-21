@@ -1,6 +1,9 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include "error.h"
+#include "rstring.h"
+#include "result.h"
 #include "unicode.h"
 #define UTF8_ACCEPT 0
 #define UTF8_REJECT 1
@@ -33,29 +36,45 @@ static uint32_t decode(uint32_t* state, uint32_t* codep, uint32_t byte) {
   return *state;
 }
 
-UnicodeError unicode_to_utf8(uint32_t codepoint, char* buffer, size_t buffer_size, size_t* bytes_written) {
-  if (buffer == NULL || bytes_written == NULL)
-    return UNICODE_ERROR_NULL_POINTER;
-  if (codepoint > 0x10FFFF)
-    return UNICODE_ERROR_INVALID_CODEPOINT;
+UnicodeResult unicode_to_utf8(uint32_t codepoint, char* buffer, size_t buffer_size, size_t* bytes_written) {
+  if (buffer == NULL || bytes_written == NULL) return Err(
+    _SLIT("buffer or bytes_written is NULL"),
+    ERRCODE_UNICODE_NULL_POINTER
+  );
+  if (codepoint > 0x10FFFF) return Err(
+    _SLIT("Invalid codepoint"),
+    ERRCODE_UNICODE_INVALID_CODEPOINT
+  );
 
   if (codepoint <= 0x7F) {
-    if (buffer_size < 1) return UNICODE_ERROR_BUFFER_TOO_SMALL;
+    if (buffer_size < 1) return Err(
+      _SLIT("Buffer too small"),
+      ERRCODE_UNICODE_BUFFER_TOO_SMALL
+    );
     buffer[0] = (char)codepoint;
     *bytes_written = 1;
   } else if (codepoint <= 0x7FF) {
-    if (buffer_size < 2) return UNICODE_ERROR_BUFFER_TOO_SMALL;
+    if (buffer_size < 2) return Err(
+      _SLIT("Buffer too small"),
+      ERRCODE_UNICODE_BUFFER_TOO_SMALL
+    );
     buffer[0] = (char)(0xC0 | (codepoint >> 6));
     buffer[1] = (char)(0x80 | (codepoint & 0x3F));
     *bytes_written = 2;
   } else if (codepoint <= 0xFFFF) {
-    if (buffer_size < 3) return UNICODE_ERROR_BUFFER_TOO_SMALL;
+    if (buffer_size < 3) return Err(
+      _SLIT("Buffer too small"),
+      ERRCODE_UNICODE_BUFFER_TOO_SMALL
+    );
     buffer[0] = (char)(0xE0 | (codepoint >> 12));
     buffer[1] = (char)(0x80 | ((codepoint >> 6) & 0x3F));
     buffer[2] = (char)(0x80 | (codepoint & 0x3F));
     *bytes_written = 3;
   } else {
-    if (buffer_size < 4) return UNICODE_ERROR_BUFFER_TOO_SMALL;
+    if (buffer_size < 4) return Err(
+      _SLIT("Buffer too small"),
+      ERRCODE_UNICODE_BUFFER_TOO_SMALL
+    );
     buffer[0] = (char)(0xF0 | (codepoint >> 18));
     buffer[1] = (char)(0x80 | ((codepoint >> 12) & 0x3F));
     buffer[2] = (char)(0x80 | ((codepoint >> 6) & 0x3F));
@@ -63,30 +82,36 @@ UnicodeError unicode_to_utf8(uint32_t codepoint, char* buffer, size_t buffer_siz
     *bytes_written = 4;
   }
 
-  return UNICODE_SUCCESS;
+  return Ok(NULL);
 }
 
-UnicodeError utf8_to_unicode(const char* utf8_str, size_t str_len, uint32_t* codepoint, size_t* bytes_read) {
-  if (utf8_str == NULL || codepoint == NULL || bytes_read == NULL)
-    return UNICODE_ERROR_NULL_POINTER;
+UnicodeResult utf8_to_unicode(const char* utf8_str, size_t str_len, uint32_t* codepoint, size_t* bytes_read) {
+  if (utf8_str == NULL || codepoint == NULL || bytes_read == NULL) return Err(
+    _SLIT("codepoint or bytes_read is NULL"),
+    ERRCODE_UNICODE_NULL_POINTER
+  );
 
   uint32_t state = 0;
   uint32_t codep = 0;
   size_t i;
 
   for (i = 0; i < str_len; i++) {
-    if (decode(&state, &codep, (uint8_t)utf8_str[i]) == UTF8_REJECT)
-      return UNICODE_ERROR_INVALID_UTF8;
+    if (decode(&state, &codep, (uint8_t)utf8_str[i]) == UTF8_REJECT) return Err(
+      _SLIT("Invalid UTF-8"),
+      ERRCODE_UNICODE_INVALID_UTF8
+    );
     if (state == UTF8_ACCEPT) {
       *codepoint = codep;
       *bytes_read = i + 1;
-      return UNICODE_SUCCESS;
+      return Ok(NULL);
     }
   }
   
-  if (state != UTF8_ACCEPT)
-    return UNICODE_ERROR_INVALID_UTF8;
-  return UNICODE_SUCCESS;
+  if (state != UTF8_ACCEPT) return Err(
+    _SLIT("Invalid UTF-8"),
+    ERRCODE_UNICODE_INVALID_UTF8
+  );
+  return Ok(NULL);
 }
 
 bool is_valid_utf8(const char* str, size_t str_len) {
@@ -103,19 +128,25 @@ bool is_valid_utf8(const char* str, size_t str_len) {
   return state == UTF8_ACCEPT;
 }
 
-UnicodeError utf8_length(const char* str, size_t str_len, size_t* count) {
-  if (str == NULL || count == NULL)
-    return UNICODE_ERROR_NULL_POINTER;
+UnicodeResult utf8_length(const char* str, size_t str_len, size_t* count) {
+  if (str == NULL || count == NULL) return Err(
+    _SLIT("str or count is NULL"),
+    ERRCODE_UNICODE_NULL_POINTER
+  );
   *count = 0;
   uint32_t state = 0;
   uint32_t codep = 0;
   for (size_t i = 0; i < str_len; i++) {
-    if (decode(&state, &codep, (uint8_t)str[i]) == UTF8_REJECT)
-      return UNICODE_ERROR_INVALID_UTF8;
+    if (decode(&state, &codep, (uint8_t)str[i]) == UTF8_REJECT) return Err(
+      _SLIT("Invalid UTF-8"),
+      ERRCODE_UNICODE_INVALID_UTF8
+    );
     if (state == UTF8_ACCEPT)
       (*count)++;
   }
-  if (state != UTF8_ACCEPT)
-    return UNICODE_ERROR_INVALID_UTF8;
-  return UNICODE_SUCCESS;
+  if (state != UTF8_ACCEPT) return Err(
+    _SLIT("Invalid UTF-8"),
+    ERRCODE_UNICODE_INVALID_UTF8
+  );
+  return Ok(NULL);
 }

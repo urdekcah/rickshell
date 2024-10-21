@@ -8,6 +8,8 @@
 #include <limits.h>
 #include <pwd.h>
 #include <locale.h>
+#include "result.h"
+#include "error.h"
 #include "expr.h"
 #include "execute.h"
 #include "parser.tab.h"
@@ -102,7 +104,7 @@ static void handle_sigint(int sig) {
   print_prompt();
 }
 
-static string get_input() {
+static StringResult get_input(string* input) {
   StringBuilder sb = string_builder__new();
   char buffer[INITIAL_BUFFER_SIZE];
     
@@ -111,13 +113,19 @@ static string get_input() {
       if (feof(stdin)) {
         if (sb.len == 0) {
           string_builder__free(&sb);
-          return _SLIT0;
+          return Err(
+            _SLIT("EOF reached"),
+            ERRCODE_EOF
+          );
         }
         break;
       } else {
         perror("Error reading input");
         string_builder__free(&sb);
-        return _SLIT0;
+        return Err(
+          _SLIT("Error reading input"),
+          ERRCODE_INPUT_READ_FAILED
+        );
       }
     }
           
@@ -138,13 +146,16 @@ static string get_input() {
     if (sb.len >= MAX_BUFFER_SIZE) {
       ffprintln(stderr, "Error: Input too large");
       string_builder__free(&sb);
-      return _SLIT0;
+      return Err(
+        _SLIT("Input too large"),
+        ERRCODE_INPUT_TOO_LARGE
+      );
     }
   }
   
-  string result = string_builder__to_string(&sb);
+  *input = string_builder__to_string(&sb);
   string_builder__free(&sb);
-  return result;
+  return Ok(NULL);
 }
 
 static int setup_signal_handler(void) {
@@ -159,9 +170,9 @@ static int setup_signal_handler(void) {
   return 0;
 }
 
-static int process_command(const string input) {
-  parse_and_execute(input);
-  return 0;
+static IntResult process_command(const string input) {
+  NTRY(parse_and_execute(input, (int*)&last_status));
+  return Ok(NULL);
 }
 
 int main(void) {
@@ -192,7 +203,12 @@ int main(void) {
     print_job_status();
     print_prompt();
 
-    string input = get_input();
+    string input;
+    StringResult r = get_input(&input);
+    if (r.is_err) {
+      report_error(r);
+      return r.err.code;
+    }
 
     if (string__is_null_or_empty(input)) {
       string__free(input);
@@ -209,12 +225,11 @@ int main(void) {
       continue;
     }
 
-    int result = process_command(input);
+    Result result = process_command(input);
     string__free(input);
 
-    if (result == 1) {
-      println(_SLIT("Exiting..."));
-      break;
+    if (result.is_err) {
+      report_error(result);
     }
 
     yylex_destroy();
