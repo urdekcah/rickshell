@@ -79,7 +79,7 @@ static char* get_current_directory() {
   return cwd;
 }
 
-static void print_prompt(void) {
+void print_prompt(void) {
   char* hostname = get_hostname();
   char* username = get_username();
   char* cwd = get_current_directory();
@@ -104,60 +104,6 @@ static void handle_sigint(int sig) {
   print_prompt();
 }
 
-static StringResult get_input(string* input) {
-  StringBuilder sb = string_builder__new();
-  char buffer[INITIAL_BUFFER_SIZE];
-    
-  while (1) {
-    if (!fgets(buffer, sizeof(buffer), stdin)) {
-      if (feof(stdin)) {
-        if (sb.len == 0) {
-          string_builder__free(&sb);
-          return Err(
-            _SLIT("EOF reached"),
-            ERRCODE_EOF
-          );
-        }
-        break;
-      } else {
-        perror("Error reading input");
-        string_builder__free(&sb);
-        return Err(
-          _SLIT("Error reading input"),
-          ERRCODE_INPUT_READ_FAILED
-        );
-      }
-    }
-          
-    size_t len = strlen(buffer);
-    if (len > 0 && buffer[len - 1] == '\n') {
-      buffer[len - 1] = '\0';
-      len--;
-    }
-
-    string tv = string__new(buffer);
-    string_builder__append(&sb, tv);
-    string__free(tv);
-        
-    if (len < sizeof(buffer) - 1) {
-      break;
-    }
-        
-    if (sb.len >= MAX_BUFFER_SIZE) {
-      ffprintln(stderr, "Error: Input too large");
-      string_builder__free(&sb);
-      return Err(
-        _SLIT("Input too large"),
-        ERRCODE_INPUT_TOO_LARGE
-      );
-    }
-  }
-  
-  *input = string_builder__to_string(&sb);
-  string_builder__free(&sb);
-  return Ok(NULL);
-}
-
 static int setup_signal_handler(void) {
   struct sigaction sa = {0};
   sa.sa_handler = handle_sigint;
@@ -178,6 +124,7 @@ static IntResult process_command(const string input) {
 int main(void) {
   setlocale(LC_ALL, "");
   ensure_directory_exist("~/.rickshell");
+  parse_path();
   if (setup_signal_handler() == -1) {
     return EXIT_FAILURE;
   }

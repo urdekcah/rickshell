@@ -7,10 +7,13 @@
 #include <stdarg.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <termios.h>
 #include "rstring.h"
 #include "strconv.h"
 #include "memory.h"
 #include "io.h"
+
+static struct termios orig_termios;
 
 ssize_t _write(int fd, const char *buf, size_t count) {
   if (count <= 0) return 0;
@@ -130,4 +133,16 @@ void ffprintln(FILE* __stream, const char* format, ...) {
 
   _writeln_to_fd(fileno(__stream), result);
   string__free(result);
+}
+
+void disable_raw_mode() {
+  tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios);
+}
+
+void enable_raw_mode() {
+  tcgetattr(STDIN_FILENO, &orig_termios);
+  atexit(disable_raw_mode);
+  struct termios raw = orig_termios;
+  raw.c_lflag &= (tcflag_t)~(ECHO | ICANON);
+  tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
 }
