@@ -150,7 +150,7 @@ extern int yydebug;
     SEMICOLON = 270,
     AND = 271,
     OR = 272,
-    NEWLINE = 273,
+    LINE_CHAGE = 273,
     IO_NUMBER = 274
   };
 #endif
@@ -559,8 +559,8 @@ static const char *const yytname[] =
   "$end", "error", "$undefined", "WORD", "QUOTED_STRING",
   "PARAM_EXPANSION", "PIPE", "LESS", "GREATER", "DGREATER", "LESSAND",
   "GREATAND", "LESSGREAT", "DGREATAND", "AMPERSAND", "SEMICOLON", "AND",
-  "OR", "NEWLINE", "IO_NUMBER", "'('", "')'", "$accept", "input", "line",
-  "command_sequence", "and_or_list", "pipeline", "command",
+  "OR", "LINE_CHAGE", "IO_NUMBER", "'('", "')'", "$accept", "input",
+  "line", "command_sequence", "and_or_list", "pipeline", "command",
   "simple_command", "cmd_prefix", "cmd_suffix", "arg", "cmd_word",
   "io_redirect", YY_NULLPTR
 };

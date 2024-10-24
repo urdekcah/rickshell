@@ -8,6 +8,7 @@
 #include <limits.h>
 #include <pwd.h>
 #include <locale.h>
+#include <readline/readline.h>
 #include "result.h"
 #include "error.h"
 #include "expr.h"
@@ -31,77 +32,13 @@ extern int yylex_destroy(void);
 volatile sig_atomic_t keep_running = 1;
 volatile int last_status = 0;
 
-static char* get_hostname(void) {
-  char* hostname = NULL;
-  long host_name_max = sysconf(_SC_HOST_NAME_MAX);
-  if (host_name_max == -1)
-    host_name_max = _POSIX_HOST_NAME_MAX;
-  hostname = rmalloc((size_t)host_name_max + 1);
-  if (hostname == NULL) {
-    perror("Error allocating memory");
-    return NULL;
-  }
-
-  if (gethostname(hostname, (size_t)host_name_max + 1) != 0) {
-    perror("Error getting hostname");
-    rfree(hostname);
-    return NULL;
-  }
-
-  char* copy = strdup(hostname);
-  rfree(hostname);
-  return copy;
-}
-
-static char* get_username(void) {
-  struct passwd *pw = getpwuid(getuid());
-  if (pw == NULL) {
-    perror("Failed to get username");
-    return NULL;
-  }
-
-  char* username = strdup(pw->pw_name);
-  if (username == NULL) {
-    perror("Failed to allocate memory for username");
-    return NULL;
-  }
-
-  return username;
-}
-
-static char* get_current_directory() {
-  char* cwd = getcwd(NULL, 0);
-  if (cwd == NULL) {
-    perror("Error getting current directory");
-    return NULL;
-  }
-
-  return cwd;
-}
-
-void print_prompt(void) {
-  char* hostname = get_hostname();
-  char* username = get_username();
-  char* cwd = get_current_directory();
-
-  if (hostname && username && cwd) {
-    fprint(ANSI_COLOR_BOLD_BLUE "%s@%s" ANSI_COLOR_BOLD_BLACK ":" ANSI_COLOR_BOLD_YELLOW "%s" ANSI_COLOR_RESET "$ ", username, hostname, cwd);
-  } else {
-    fprint("daniel@fishydino:~$ ");  // Daniel (Elliott): English name of rickroot30
-  }
-
-  fflush(stdout);
-
-  rfree(hostname);
-  rfree(username);
-  rfree(cwd);
-}
-
 static void handle_sigint(int sig) {
   (void)sig;
   keep_running = 0;
   println(_SLIT0);
-  print_prompt();
+  string prompt = get_prompt();
+  print(prompt);
+  string__free(prompt);
 }
 
 static int setup_signal_handler(void) {
@@ -129,6 +66,8 @@ int main(void) {
     return EXIT_FAILURE;
   }
 
+  rl_redisplay_function = rick__redisplay_function;
+
   init_variables();
   LogConfig config = {
     .name = _SLIT("rickshell"),
@@ -148,14 +87,7 @@ int main(void) {
 
   while (keep_running) {
     print_job_status();
-    print_prompt();
-
-    string input;
-    StringResult r = get_input(&input);
-    if (r.is_err) {
-      report_error(r);
-      return r.err.code;
-    }
+    string input = get_input();
 
     if (string__is_null_or_empty(input)) {
       string__free(input);
@@ -172,6 +104,7 @@ int main(void) {
       continue;
     }
 
+    println(_SLIT0);
     Result result = process_command(input);
     string__free(input);
 

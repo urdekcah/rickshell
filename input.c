@@ -1,3 +1,4 @@
+#define _XOPEN_SOURCE 700
 #define _POSIX_C_SOURCE 1
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,8 +11,11 @@
 #include <errno.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <pwd.h>
+#include <readline/readline.h>
 #include "color.h"
 #include "error.h"
+#include "memory.h"
 #include "result.h"
 #include "rstring.h"
 #include "builtin.h"
@@ -23,24 +27,11 @@
 
 extern char *path_dirs[MAX_PATH_DIRS];
 extern int path_dir_count;
-static InputBuffer input = {NULL, 0, 0, 0};
-
-static void init_input_buffer() {
-  input.buf = malloc(INITIAL_BUFFER_SIZE);
-  input.capacity = INITIAL_BUFFER_SIZE;
-  input.len = 0;
-  input.cursor_pos = 0;
-}
+string prompt = _SLIT0;
+size_t prompt_len = 0;
 
 static int is_command_char(char c) {
   return isalnum(c) || c == '_' || c == '-' || c == '.';
-}
-
-static void get_command_length(const char* buf, size_t* cmd_len) {
-  *cmd_len = 0;
-  while (buf[*cmd_len] && is_command_char(buf[*cmd_len])) {
-    (*cmd_len)++;
-  }
 }
 
 static int command_exists(const string cmd) {
@@ -72,138 +63,124 @@ static int command_exists(const string cmd) {
   return 0;
 }
 
-static void refresh_line() {
-  printf("\r\033[K");
-  print_prompt();
+void rick__redisplay_function(void) {
+  char *line = rl_line_buffer;
+  int cursor = rl_point;
+  size_t len = strlen(line);
+    
+  char *cmd = NULL;
+  size_t cmd_len = 0;
+  while (cmd_len < len && is_command_char(line[cmd_len]))
+    cmd_len++;
+    
+  if (cmd_len > 0)
+    cmd = strndup(line, cmd_len);
 
-  if (input.len > 0) {
-    size_t cmd_len = 0;
-    get_command_length(input.buf, &cmd_len);
-        
-    if (cmd_len > 0) {
-      string temp = string__new(input.buf);
-      string cmd = string__substring(temp, 0, (ssize_t)cmd_len);
-      bool cmd_exists = command_exists(cmd);
-      string__free(temp);
-      string__free(cmd);
-
-      printf("%s%.*s%s", (cmd_exists)?ANSI_COLOR_GREEN:ANSI_COLOR_RED, (int)cmd_len, input.buf, ANSI_COLOR_RESET);
-      if (cmd_len < input.len)
-        printf("%s", input.buf + cmd_len);
-    } else {
-      printf("%s", input.buf);
-    }
+  printf("\r\033[K%s", prompt.str);
+  
+  if (cmd) {
+    string scmd = string__new(cmd);
+    const char* color = command_exists(scmd) ? ANSI_COLOR_GREEN : ANSI_COLOR_RED;
+    printf("%s%s%s", color, cmd, ANSI_COLOR_RESET);
+    free(cmd);
+    string__free(scmd);
   }
   
-  if (input.cursor_pos < input.len) {
-    printf("\033[%zuD", input.len - input.cursor_pos);
-  }
-    
+  if (cmd_len < len)
+    printf("%s", line + cmd_len);
+  
+  printf("\r");
+  for (size_t i = 0; i < prompt_len + (size_t)cursor; i++)
+    printf("\033[C");
   fflush(stdout);
 }
 
-static void insert_char(char c) {
-  if (input.len + 1 >= input.capacity) {
-    size_t new_capacity = input.capacity * 2;
-    char *new_buf = realloc(input.buf, new_capacity);
-    if (new_buf) {
-      input.buf = new_buf;
-      input.capacity = new_capacity;
-    }
-  }
-    
-  if (input.cursor_pos < input.len) {
-    memmove(input.buf + input.cursor_pos + 1, 
-            input.buf + input.cursor_pos, 
-            input.len - input.cursor_pos);
-  }
-    
-  input.buf[input.cursor_pos] = c;
-  input.cursor_pos++;
-  input.len++;
-  input.buf[input.len] = '\0';
+string get_input(void) {
+  prompt = get_prompt();
+  char* raw_input = readline(prompt.str);
+  string input = string__new(raw_input);
+  free(raw_input);
+  string__free(prompt);
+  prompt = _SLIT0;
+  return input;
 }
 
-static void delete_char() {
-  if (input.cursor_pos > 0) {
-    if (input.cursor_pos < input.len) {
-      memmove(input.buf + input.cursor_pos - 1, 
-              input.buf + input.cursor_pos, 
-              input.len - input.cursor_pos);
-    }
-    input.cursor_pos--;
-    input.len--;
-    input.buf[input.len] = '\0';
+static char* get_hostname(void) {
+  char* hostname = NULL;
+  long host_name_max = sysconf(_SC_HOST_NAME_MAX);
+  if (host_name_max == -1)
+    host_name_max = _POSIX_HOST_NAME_MAX;
+  hostname = rmalloc((size_t)host_name_max + 1);
+  if (hostname == NULL) {
+    perror("Error allocating memory");
+    return NULL;
   }
+
+  if (gethostname(hostname, (size_t)host_name_max + 1) != 0) {
+    perror("Error getting hostname");
+    rfree(hostname);
+    return NULL;
+  }
+
+  char* copy = strdup(hostname);
+  rfree(hostname);
+  return copy;
 }
 
-StringResult get_input(string* result) {
-  if (!input.buf) {
-    init_input_buffer();
+static char* get_username(void) {
+  struct passwd *pw = getpwuid(getuid());
+  if (pw == NULL) {
+    perror("Failed to get username");
+    return NULL;
   }
-  
-  enable_raw_mode();
-  input.len = 0;
-  input.cursor_pos = 0;
-  input.buf[0] = '\0';
-  
-  while (1) {
-    refresh_line("$ ");
-    char c;
-    ssize_t nread = read(STDIN_FILENO, &c, 1);
-    
-    if (nread == -1) {
-      if (errno == EAGAIN) continue;
-      disable_raw_mode();
-      return Err(_SLIT("read error"), ERRCODE_INPUT_READ_FAILED);
-    }
-    
-    if (nread == 0) {
-      if (input.len == 0) {
-        disable_raw_mode();
-        return Err(_SLIT("EOF"), ERRCODE_EOF);
-      }
-      break;
-    }
 
-    switch (c) {
-      case CTRL_KEY('c'):
-        printf("\n");
-        input.len = 0;
-        input.buf[0] = '\0';
-        disable_raw_mode();
-        return Ok(NULL);
-        
-      case '\r':
-      case '\n':
-        printf("\n");
-        if (input.len > 0) {
-          *result = string__new(input.buf);
-          disable_raw_mode();
-          return Ok(NULL);
-        }
-        break;
-        
-      case 127:
-      case CTRL_KEY('h'):
-        delete_char();
-        break;
-        
-      case CTRL_KEY('d'):
-        if (input.len == 0) {
-          disable_raw_mode();
-          return Err(_SLIT("EOF"), ERRCODE_EOF);
-        }
-        break;
-        
-      default:
-        if (!iscntrl(c)) {
-          insert_char(c);
-        }
-        break;
-    }
+  char* username = strdup(pw->pw_name);
+  if (username == NULL) {
+    perror("Failed to allocate memory for username");
+    return NULL;
   }
+
+  return username;
+}
+
+static char* get_current_directory() {
+  char* cwd = getcwd(NULL, 0);
+  if (cwd == NULL) {
+    perror("Error getting current directory");
+    return NULL;
+  }
+
+  return cwd;
+}
+
+string get_prompt(void) {
+  char* hostname = get_hostname();
+  char* username = get_username();
+  char* cwd = get_current_directory();
+
+  prompt_len = 0;
+  StringBuilder s = string_builder__new();
+  string_builder__append_cstr(&s, ANSI_COLOR_BOLD_BLUE);
+  string_builder__append_cstr(&s, (username != NULL) ? username : "daniel");
+  string_builder__append_char(&s, '@');
+  string_builder__append_cstr(&s, (hostname != NULL) ? hostname : "fishydino");
+  string_builder__append_cstr(&s, ANSI_COLOR_BOLD_BLACK);
+  string_builder__append_char(&s, ':');
+  string_builder__append_cstr(&s, ANSI_COLOR_BOLD_YELLOW);
+  string_builder__append_cstr(&s, (cwd != NULL) ? cwd : "~");
+  string_builder__append_cstr(&s, ANSI_COLOR_RESET);
+  string_builder__append_cstr(&s, "$ ");
   
-  disable_raw_mode();
-  return Ok(NULL);
+  prompt_len += strlen((username != NULL) ? username : "daniel");
+  prompt_len += strlen((hostname != NULL) ? hostname : "fishydino");
+  prompt_len += strlen((cwd != NULL) ? cwd : "~");
+  prompt_len += 4;
+
+  rfree(hostname);
+  rfree(username);
+  rfree(cwd);
+  
+  string result = string_builder__to_string(&s);
+  string_builder__free(&s);
+  return result;
 }

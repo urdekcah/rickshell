@@ -843,7 +843,7 @@ case 15:
 /* rule 15 can match eol */
 YY_RULE_SETUP
 #line 35 "lexer.l"
-{ return NEWLINE; }
+{ return LINE_CHAGE; }
 	YY_BREAK
 case 16:
 YY_RULE_SETUP

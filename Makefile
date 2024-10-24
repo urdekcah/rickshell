@@ -1,6 +1,6 @@
 CC := gcc
-CFLAGS=-g -Wall -Wextra -Wconversion -Wnull-dereference -Wshadow -Wlogical-op -Wuninitialized -fstrict-aliasing -fsanitize=undefined -fsanitize=address -fsanitize=leak -Werror -Iinclude
-LDFLAGS=-Wl,--warn-common
+CFLAGS := -O3 -g0 -fvisibility=hidden -Wl,--strip-all -Wall -Wextra -Wconversion -Wnull-dereference -Wshadow -Wlogical-op -Wuninitialized -fstrict-aliasing -Werror -Iinclude
+LDFLAGS := -static -Wl,--strip-all,--warn-common,-lreadline
 AR := ar
 ARFLAGS := rcs
 

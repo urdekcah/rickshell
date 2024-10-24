@@ -21,8 +21,9 @@ typedef struct {
   size_t cursor_pos;
 } InputBuffer;
 
-void print_prompt(void);
+string get_prompt(void);
 void enable_raw_mode(void);
 void disable_raw_mode(void);
-StringResult get_input(string* result);
+void rick__redisplay_function(void);
+string get_input(void);
 #endif /* __RICKSHELL_IO_H__ */
