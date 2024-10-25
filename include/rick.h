@@ -7,4 +7,7 @@
 
 typedef struct Redirect Redirect;
 typedef enum   RedirectType RedirectType;
+
+void init_rickshell();
+void cleanup_rickshell();
 #endif /* __RICKSHELL_RICK_H__ */

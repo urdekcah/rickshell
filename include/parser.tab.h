@@ -64,7 +64,7 @@ extern int yydebug;
     SEMICOLON = 270,
     AND = 271,
     OR = 272,
-    NEWLINE = 273,
+    LINE_CHAGE = 273,
     IO_NUMBER = 274
   };
 #endif

@@ -8,6 +8,10 @@
 #include <stdlib.h>
 #include "memory.h"
 #include "io.h"
+#include "file.h"
+
+char *path_dirs[MAX_PATH_DIRS];
+int path_dir_count = 0;
 
 char* expand_home_directory(const char* path) {
   if (path[0] == '~') {
@@ -71,4 +75,19 @@ int ensure_file_exist(const char *file_path) {
   close(fd);
   rfree(expanded_path);
   return 0;
+}
+
+void parse_path() {
+  char *path = getenv("PATH");
+  if (!path) return;
+
+  char *path_copy = strdup(path);
+  char *token = strtok(path_copy, ":");
+
+  while (token != NULL && path_dir_count < MAX_PATH_DIRS) {
+    path_dirs[path_dir_count++] = strdup(token);
+    token = strtok(NULL, ":");
+  }
+
+  free(path_copy);
 }

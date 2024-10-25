@@ -8,6 +8,8 @@
 #include <limits.h>
 #include <pwd.h>
 #include <locale.h>
+#include <readline/readline.h>
+#include "rick.h"
 #include "result.h"
 #include "error.h"
 #include "expr.h"
@@ -31,184 +33,20 @@ extern int yylex_destroy(void);
 volatile sig_atomic_t keep_running = 1;
 volatile int last_status = 0;
 
-static char* get_hostname(void) {
-  char* hostname = NULL;
-  long host_name_max = sysconf(_SC_HOST_NAME_MAX);
-  if (host_name_max == -1)
-    host_name_max = _POSIX_HOST_NAME_MAX;
-  hostname = rmalloc((size_t)host_name_max + 1);
-  if (hostname == NULL) {
-    perror("Error allocating memory");
-    return NULL;
-  }
-
-  if (gethostname(hostname, (size_t)host_name_max + 1) != 0) {
-    perror("Error getting hostname");
-    rfree(hostname);
-    return NULL;
-  }
-
-  char* copy = strdup(hostname);
-  rfree(hostname);
-  return copy;
-}
-
-static char* get_username(void) {
-  struct passwd *pw = getpwuid(getuid());
-  if (pw == NULL) {
-    perror("Failed to get username");
-    return NULL;
-  }
-
-  char* username = strdup(pw->pw_name);
-  if (username == NULL) {
-    perror("Failed to allocate memory for username");
-    return NULL;
-  }
-
-  return username;
-}
-
-static char* get_current_directory() {
-  char* cwd = getcwd(NULL, 0);
-  if (cwd == NULL) {
-    perror("Error getting current directory");
-    return NULL;
-  }
-
-  return cwd;
-}
-
-static void print_prompt(void) {
-  char* hostname = get_hostname();
-  char* username = get_username();
-  char* cwd = get_current_directory();
-
-  if (hostname && username && cwd) {
-    fprint(ANSI_COLOR_BOLD_BLUE "%s@%s" ANSI_COLOR_BOLD_BLACK ":" ANSI_COLOR_BOLD_YELLOW "%s" ANSI_COLOR_RESET "$ ", username, hostname, cwd);
-  } else {
-    fprint("daniel@fishydino:~$ ");  // Daniel (Elliott): English name of rickroot30
-  }
-
-  fflush(stdout);
-
-  rfree(hostname);
-  rfree(username);
-  rfree(cwd);
-}
-
-static void handle_sigint(int sig) {
-  (void)sig;
-  keep_running = 0;
-  println(_SLIT0);
-  print_prompt();
-}
-
-static StringResult get_input(string* input) {
-  StringBuilder sb = string_builder__new();
-  char buffer[INITIAL_BUFFER_SIZE];
-    
-  while (1) {
-    if (!fgets(buffer, sizeof(buffer), stdin)) {
-      if (feof(stdin)) {
-        if (sb.len == 0) {
-          string_builder__free(&sb);
-          return Err(
-            _SLIT("EOF reached"),
-            ERRCODE_EOF
-          );
-        }
-        break;
-      } else {
-        perror("Error reading input");
-        string_builder__free(&sb);
-        return Err(
-          _SLIT("Error reading input"),
-          ERRCODE_INPUT_READ_FAILED
-        );
-      }
-    }
-          
-    size_t len = strlen(buffer);
-    if (len > 0 && buffer[len - 1] == '\n') {
-      buffer[len - 1] = '\0';
-      len--;
-    }
-
-    string tv = string__new(buffer);
-    string_builder__append(&sb, tv);
-    string__free(tv);
-        
-    if (len < sizeof(buffer) - 1) {
-      break;
-    }
-        
-    if (sb.len >= MAX_BUFFER_SIZE) {
-      ffprintln(stderr, "Error: Input too large");
-      string_builder__free(&sb);
-      return Err(
-        _SLIT("Input too large"),
-        ERRCODE_INPUT_TOO_LARGE
-      );
-    }
-  }
-  
-  *input = string_builder__to_string(&sb);
-  string_builder__free(&sb);
-  return Ok(NULL);
-}
-
-static int setup_signal_handler(void) {
-  struct sigaction sa = {0};
-  sa.sa_handler = handle_sigint;
-  sa.sa_flags = SA_RESTART;
-  
-  if (sigaction(SIGINT, &sa, NULL) == -1) {
-    perror("Error setting up signal handler");
-    return -1;
-  }
-  return 0;
-}
-
 static IntResult process_command(const string input) {
   NTRY(parse_and_execute(input, (int*)&last_status));
   return Ok(NULL);
 }
 
 int main(void) {
-  setlocale(LC_ALL, "");
-  ensure_directory_exist("~/.rickshell");
-  if (setup_signal_handler() == -1) {
-    return EXIT_FAILURE;
-  }
-
-  init_variables();
-  LogConfig config = {
-    .name = _SLIT("rickshell"),
-    .level = LOG_LEVEL_INFO,
-    .color_output = true,
-    .filename = _SLIT("~/.rickshell/rickshell.log"),
-    .max_file_size = 10 * 1024 * 1024,  // 10 MB
-    .max_backup_files = 10,
-    .append_mode = true,
-    .file_output_only = true,
-    .log_format = _SLIT("[%Y-%M-%d %H:%M:%S] [%L] [%p] (%a) %f:%l (%n): %m")
-  };
-  log_init(&config);
+  init_rickshell();
 
   println(_SLIT("Enter commands (type 'exit' to quit):"));
   log_info("Shell started");
 
   while (keep_running) {
     print_job_status();
-    print_prompt();
-
-    string input;
-    StringResult r = get_input(&input);
-    if (r.is_err) {
-      report_error(r);
-      return r.err.code;
-    }
+    string input = get_input();
 
     if (string__is_null_or_empty(input)) {
       string__free(input);
@@ -225,6 +63,7 @@ int main(void) {
       continue;
     }
 
+    println(_SLIT0);
     Result result = process_command(input);
     string__free(input);
 
@@ -234,9 +73,8 @@ int main(void) {
 
     yylex_destroy();
   }
-  cleanup_variables();
-  log_info("Shell exited");
-  log_shutdown();
+  
+  cleanup_rickshell();
 
   return last_status;
 }

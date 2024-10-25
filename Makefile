@@ -1,13 +1,25 @@
 CC := gcc
-CFLAGS := -O3 -g0 -fvisibility=hidden -Wl,--strip-all -Wall -Wextra -Wconversion -Wnull-dereference -Wshadow -Wlogical-op -Wuninitialized -fstrict-aliasing -Werror -Iinclude
+CFLAGS := -O3 -g0 -fvisibility=hidden -Wl,--strip-all -Wall -Wextra -Wconversion \
+          -Wnull-dereference -Wshadow -Wlogical-op -Wuninitialized -fstrict-aliasing \
+          -Werror -Iinclude
+
 LDFLAGS := -static -Wl,--strip-all,--warn-common
-AR := ar
-ARFLAGS := rcs
+LDLIBS := -lncurses -ltinfo -ldl
+
+TARGET_DIR := target
+LIB_DIR := $(TARGET_DIR)/lib
+BUILTIN_DIR := builtin
+READLINE_DIR := lib/readline
+
+BUILTIN_LIB := $(LIB_DIR)/libbuiltin.a
+READLINE_LIB := $(LIB_DIR)/libreadline.a
 
 TARGET := rickshell
-BUILTIN_DIR := builtin
-LIB_DIR := lib
-BUILTIN_LIB := $(LIB_DIR)/libbuiltin.a
+
+READLINE_CFLAGS := -O3 -g0 -fvisibility=hidden -Wall \
+                  -Wno-unused-variable -Wno-unused-function -Wno-sign-compare \
+                  -Wno-parentheses \
+                  -DHAVE_CONFIG_H -DNO_GETTIMEOFDAY
 
 SRCS := $(wildcard *.c) $(wildcard $(BUILTIN_DIR)/*.c)
 SRCS := $(filter-out lex.yy.c, $(SRCS))
@@ -15,18 +27,42 @@ OBJS := $(SRCS:.c=.o)
 BUILTIN_OBJS := $(filter $(BUILTIN_DIR)/%.o,$(OBJS))
 MAIN_OBJS := $(filter-out $(BUILTIN_OBJS),$(OBJS))
 
-.PHONY: all clean build ochistka
+.PHONY: all clean build clean_target prepare_dirs clean_readline
 
-all: build ochistka
+all: build clean_target
 
-build: $(BUILTIN_LIB) $(TARGET)
-
-$(BUILTIN_LIB): $(BUILTIN_OBJS)
+prepare_dirs:
+	@mkdir -p $(TARGET_DIR)
 	@mkdir -p $(LIB_DIR)
+
+clean_readline:
+	@if [ -f $(READLINE_DIR)/Makefile ]; then \
+		cd $(READLINE_DIR) && $(MAKE) clean; \
+	fi
+
+$(READLINE_LIB): prepare_dirs
+	@echo "Building readline..."
+	cd $(READLINE_DIR) && \
+	./configure --disable-shared --enable-static \
+		--disable-multibyte --disable-install-examples \
+		--with-curses \
+		ac_cv_func_gettimeofday=no && \
+	$(MAKE) CFLAGS="$(READLINE_CFLAGS)" OBJECTS="readline.o vi_mode.o funmap.o keymaps.o parens.o search.o \
+		rltty.o complete.o bind.o isearch.o display.o signals.o util.o kill.o \
+		undo.o macro.o input.o callback.o terminal.o \
+		text.o nls.o misc.o \
+		history.o histexpand.o histfile.o histsearch.o shell.o \
+		mbutil.o tilde.o colors.o parse-colors.o \
+		xmalloc.o xfree.o compat.o"
+	@cp $(READLINE_DIR)/libreadline.a $(READLINE_LIB)
+
+$(BUILTIN_LIB): $(BUILTIN_OBJS) | prepare_dirs
 	$(AR) $(ARFLAGS) $@ $^
 
-$(TARGET): $(MAIN_OBJS) lex.yy.o $(BUILTIN_LIB)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+build: $(READLINE_LIB) $(BUILTIN_LIB) $(TARGET)
+
+$(TARGET): $(MAIN_OBJS) lex.yy.o $(BUILTIN_LIB) $(READLINE_LIB)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -34,11 +70,11 @@ $(TARGET): $(MAIN_OBJS) lex.yy.o $(BUILTIN_LIB)
 lex.yy.o: lex.yy.c
 	$(CC) $(CFLAGS) -Wno-null-dereference -Wno-error=null-dereference -c $< -o $@
 
-ochistka:
+clean_target: clean_readline
 	@echo "Cleaning up object files..."
-	@rm -f $(OBJS) lex.yy.o $(BUILTIN_LIB)
-	@rm -rf $(LIB_DIR)
+	@rm -f $(OBJS) lex.yy.o
+	@rm -rf $(TARGET_DIR)
 
-clean:
-	rm -f $(OBJS) lex.yy.o $(TARGET) $(BUILTIN_LIB)
-	rm -rf $(LIB_DIR)
+clean: clean_target
+	rm -f $(TARGET)
+	rm -rf $(TARGET_DIR)
