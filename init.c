@@ -2,10 +2,12 @@
 #include <locale.h>
 #include <signal.h>
 #include <readline/readline.h>
+#include <readline/history.h>
 #include "variable.h"
 #include "log.h"
 #include "file.h"
 #include "io.h"
+#include "memory.h"
 
 extern volatile sig_atomic_t keep_running;
 
@@ -30,6 +32,19 @@ static int setup_signal_handler(void) {
   return 0;
 }
 
+void initialize_history() {
+  char* path = expand_home_directory("~/.rickshell/.history");
+  read_history(path);
+  rfree(path);
+}
+
+void save_history(char* cmd) {
+  char* path = expand_home_directory("~/.rickshell/.history");
+  write_history(path);
+  rfree(path);
+  add_history(cmd);
+}
+
 void init_rickshell() {
   setlocale(LC_ALL, "");
   if (setup_signal_handler() == -1) _exit(1);
@@ -37,6 +52,7 @@ void init_rickshell() {
   parse_path();
   rl_redisplay_function = rick__redisplay_function;
   init_variables();
+  initialize_history();
   LogConfig config = {
     .name = _SLIT("rickshell"),
     .level = LOG_LEVEL_INFO,

@@ -22,6 +22,7 @@
 #include "job.h"
 #include "variable.h"
 #include "io.h"
+#include "history.h"
 
 #define INITIAL_BUFFER_SIZE (1 * 1024)  // 1 KB initial size
 #define MAX_BUFFER_SIZE (100 * 1024 * 1024)  // 100 MB limit
@@ -64,6 +65,7 @@ int main(void) {
     }
 
     println(_SLIT0);
+    save_history(input.str);
     Result result = process_command(input);
     string__free(input);
 
