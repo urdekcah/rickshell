@@ -8,7 +8,7 @@ LDLIBS := -lncurses -ltinfo -ldl
 
 TARGET_DIR := target
 LIB_DIR := $(TARGET_DIR)/lib
-BUILTIN_DIR := builtin
+BUILTIN_LIB_DIR := lib/builtin
 READLINE_DIR := lib/readline
 
 BUILTIN_LIB := $(LIB_DIR)/libbuiltin.a
@@ -21,10 +21,10 @@ READLINE_CFLAGS := -O3 -g0 -fvisibility=hidden -Wall \
                   -Wno-parentheses \
                   -DHAVE_CONFIG_H -DNO_GETTIMEOFDAY
 
-SRCS := $(wildcard *.c) $(wildcard $(BUILTIN_DIR)/*.c)
+SRCS := $(wildcard *.c) $(wildcard $(BUILTIN_LIB_DIR)/*.c)
 SRCS := $(filter-out lex.yy.c, $(SRCS))
 OBJS := $(SRCS:.c=.o)
-BUILTIN_OBJS := $(filter $(BUILTIN_DIR)/%.o,$(OBJS))
+BUILTIN_OBJS := $(filter $(BUILTIN_LIB_DIR)/%.o,$(OBJS))
 MAIN_OBJS := $(filter-out $(BUILTIN_OBJS),$(OBJS))
 
 .PHONY: all clean build clean_target prepare_dirs clean_readline
