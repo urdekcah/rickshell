@@ -11,6 +11,7 @@ static builtin_command builtin_commands[] = {
   {_SLIT("exit"), builtin_exit},
   {_SLIT("export"), builtin_export},
   {_SLIT("help"), builtin_help},
+  {_SLIT("history"), builtin_history},
   {_SLIT("printf"), builtin_printf},
   {_SLIT("readonly"), builtin_readonly},
   {_SLIT("set"), builtin_set},

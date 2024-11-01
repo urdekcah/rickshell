@@ -30,6 +30,7 @@
 #define BUFFER_GROWTH_FACTOR 2
 
 extern int yylex_destroy(void);
+extern bool do_not_save_history;
 
 volatile sig_atomic_t keep_running = 1;
 volatile int last_status = 0;
@@ -65,13 +66,13 @@ int main(void) {
     }
 
     println(_SLIT0);
-    save_history(input.str);
     Result result = process_command(input);
+    if (!do_not_save_history) save_history(input.str);
+    do_not_save_history = false;
     string__free(input);
 
-    if (result.is_err) {
+    if (result.is_err)
       report_error(result);
-    }
 
     yylex_destroy();
   }

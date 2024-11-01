@@ -87,6 +87,23 @@ const HelpInfo builtin_helps[BUILTIN_FUNCS_SIZE] = {
     )
   },
   {
+    _SLIT("history"),
+    _SLIT("Display the command history"),
+    _SLIT("history: history [-c] [-d offset] [n] or history -anrw [filename] or history -ps arg [arg...]"),
+    _SLIT(
+      "Display the command history.\n"
+      "\n"
+      "Options:\n"
+      "  -c  Clear the history list\n"
+      "  -d  Delete the history entry at offset\n"
+      "  -a  Append history lines from the history file\n"
+      "  -n  Read all history lines not already read\n"
+      "  -r  Read the history file and append the contents to the history list\n"
+      "  -w  Write the current history to the history file\n"
+      "  -p  Print the history list\n"
+    )
+  },
+  {
     _SLIT("printf"),
     _SLIT("Format and print data"),
     _SLIT("printf [-v var] format [arguments]"),

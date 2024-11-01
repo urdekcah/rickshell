@@ -4,7 +4,7 @@
 #include "rstring.h"
 
 typedef int (*builtin_func)(Command* cmd);
-#define BUILTIN_FUNCS_SIZE 10
+#define BUILTIN_FUNCS_SIZE 11
 
 typedef struct {
   const string name;
@@ -17,6 +17,7 @@ int builtin_echo(Command *cmd);
 int builtin_exit(Command *cmd);
 int builtin_export(Command *cmd);
 int builtin_help(Command *cmd);
+int builtin_history(Command *cmd);
 int builtin_printf(Command *cmd);
 int builtin_readonly(Command *cmd);
 int builtin_set(Command *cmd);
