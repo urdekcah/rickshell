@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
@@ -71,7 +72,7 @@ static int change_dir(const char *dir, int follow_symlinks, int exit_on_error, i
 }
 
 static char *find_cd_path(const char *dir) {
-  static char full_path[4096];
+  static char full_path[4096]; // This buffer size is still fine as long as it's large enough for most scenarios.
   char *cdpath = getenv("CDPATH");
   
   if (cdpath == NULL) {
@@ -84,14 +85,16 @@ static char *find_cd_path(const char *dir) {
   
   path = strtok_r(cdpath_copy, ":", &saveptr);
   while (path != NULL) {
-    if (strlen(path) + strlen(dir) + 1 < sizeof(full_path)) {
+    size_t required_length = strlen(path) + strlen(dir) + 2;
+    if (required_length < sizeof(full_path)) {
       snprintf(full_path, sizeof(full_path), "%s/%s", path, dir);
       if (access(full_path, F_OK) == 0) {
         free(cdpath_copy);
         return full_path;
       }
-      path = strtok_r(NULL, ":", &saveptr);
     }
+    
+    path = strtok_r(NULL, ":", &saveptr);
   }
   
   free(cdpath_copy);

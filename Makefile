@@ -1,7 +1,7 @@
 CC := gcc
 CFLAGS := -O3 -g0 -fvisibility=hidden -Wl,--strip-all -Wall -Wextra -Wconversion \
           -Wnull-dereference -Wshadow -Wlogical-op -Wuninitialized -fstrict-aliasing \
-          -Werror -Iinclude
+          -Werror -Wno-format-truncation -Iinclude
 
 LDFLAGS := -static -Wl,--strip-all,--warn-common
 LDLIBS := -lncurses -ltinfo -ldl
