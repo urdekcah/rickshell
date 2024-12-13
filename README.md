@@ -8,6 +8,9 @@
   <a href="#license">License</a>
 </p>
 
+> [!CAUTION]
+> This program is designed for educational purposes and is not yet suitable for practical use. It currently exists in a state where legacy code and modern code coexist. Future updates will include refactoring and improvements to enhance the codebase.
+
 Rickshell was not designed to be a general-purpose tool or an ideal solution for a wide audience of developers. Instead, it started out as—and continues to be—a **personal project** for the developer known as **rickroot**(_real name_: **Kim Hyunseo**, GitHub: [@rickroot30](https://github.com/rickroot30)). Rickshell is a personal project that was developed to bring together tools, streamline workflows, and manage tasks in a way that made sense for **rickroot's** development habits and preferences. This is not a shell built for many; it is a shell built for **one person**.
 
 The fact that others may find some utility in Rickshell is more of an unintended side effect than a goal. This shell is **not** intended to suit the needs of a wide range of developers, and there is **no guarantee** that it will work for you. It was built with the express purpose of being **rickroot's own custom tool** for managing and enhancing their development process.
