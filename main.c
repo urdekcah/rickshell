@@ -42,8 +42,6 @@ static IntResult process_command(const string input) {
 
 int main(void) {
   init_rickshell();
-
-  println(_SLIT("Enter commands (type 'exit' to quit):"));
   log_info("Shell started");
 
   while (keep_running) {
