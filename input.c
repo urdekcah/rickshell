@@ -150,6 +150,23 @@ static char* get_current_directory() {
     return NULL;
   }
 
+  const char* home = getenv("HOME");
+  if (home != NULL && strncmp(cwd, home, strlen(home)) == 0) {
+    size_t home_len = strlen(home);
+    size_t cwd_len = strlen(cwd);
+    char* result = malloc(cwd_len - home_len + 2); // +2 for '~' and '\0'
+
+    if (result == NULL) {
+      free(cwd);
+      return NULL;
+    }
+      
+    result[0] = '~';
+    strcpy(result + 1, cwd + home_len);
+    free(cwd);
+    return result;
+  }
+
   return cwd;
 }
 
