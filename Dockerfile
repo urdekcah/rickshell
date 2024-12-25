@@ -23,7 +23,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
   TZ=UTC \
   PATH="/app:${PATH}"
 
-# hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     gcc \
@@ -62,7 +61,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
   PATH="/app:${PATH}" \
   HOME=/home/khonso
 
-# hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libreadline-dev \
     libncurses5-dev \
