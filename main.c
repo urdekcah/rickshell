@@ -14,7 +14,6 @@
 #include "error.h"
 #include "expr.h"
 #include "execute.h"
-#include "parser.tab.h"
 #include "color.h"
 #include "memory.h"
 #include "file.h"
@@ -29,7 +28,6 @@
 #define MAX_COMMAND_LENGTH 1000  // Maximum length for a single command
 #define BUFFER_GROWTH_FACTOR 2
 
-extern int yylex_destroy(void);
 extern bool do_not_save_history;
 
 volatile sig_atomic_t keep_running = 1;
@@ -71,8 +69,6 @@ int main(void) {
 
     if (result.is_err)
       report_error(result);
-
-    yylex_destroy();
   }
   
   cleanup_rickshell();

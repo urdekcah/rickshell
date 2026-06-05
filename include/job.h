@@ -2,12 +2,13 @@
 #define __RICKSHELL_JOB_H__
 #include <sys/types.h>
 #include "expr.h"
+#include "ast.h"
 #include "result.h"
 
 typedef struct Job {
   int job_id;
   pid_t pgid;
-  CommandList* cmds;
+  Node* cmds;
   string command_line;
   int status;
   struct Job* next;
@@ -39,16 +40,23 @@ void reclaim_terminal(void);
 void reset_child_signals(void);
 
 void init_job_list(void);
-Job* add_job(pid_t pgid, CommandList* cmds, const string command_line);
+Job* add_job(pid_t pgid, Node* cmds, const string command_line);
 void remove_job(Job* job);
 Job* find_job(int job_id);
 void update_job_status(void);
 /**
- * @param[in]  cmds
- * @param[in]  command_line
- * @param[out] result
+ * @brief Runs a syntax-tree node as a background job.
+ *
+ * Forks a child that places itself in a new process group and executes @p node;
+ * the parent registers the job and returns immediately.
+ *
+ * @param[in]  node          Node to run in the background. Must not be NULL.
+ *                           Ownership stays with the caller; the child runs on
+ *                           its forked copy.
+ * @param[in]  command_line  Display text for the jobs list.
+ * @param[out] result        Receives 0 once the job is launched. Must not be NULL.
  */
-IntResult execute_background_job(CommandList* cmds, const string command_line, int* result);
+IntResult execute_background_job(Node* node, const string command_line, int* result);
 void print_jobs(void);
 void cleanup_jobs(void);
 void print_job_status(void);

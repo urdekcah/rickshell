@@ -103,7 +103,7 @@ void init_job_list(void) {
   job_list.next_job_id = 1;
 }
 
-Job* add_job(pid_t pgid, CommandList* cmds, const string command_line) {
+Job* add_job(pid_t pgid, Node* cmds, const string command_line) {
   Job* job = rmalloc(sizeof(Job));
   if (!job) {
     print_error(_SLIT("Failed to allocate memory for job"));
@@ -194,19 +194,20 @@ void update_job_status(void) {
   }
 }
 
-IntResult execute_background_job(CommandList* cmds, const string command_line, int* result) {
+IntResult execute_background_job(Node* node, const string command_line, int* result) {
+  fflush(NULL);
   pid_t pid = fork();
 
   *result = 0;
 
   if (pid == 0) {
     setpgid(0, 0);
-    *result = -1;
-    execute_command_list(cmds, result);
+    *result = 0;
+    execute_node(node, result);
     exit(*result);
   } else if (pid > 0) {
     setpgid(pid, pid);
-    Job* job = add_job(pid, cmds, command_line);
+    Job* job = add_job(pid, node, command_line);
     if (job) {
       fprintln("[%d] %d", job->job_id, pid);
     }

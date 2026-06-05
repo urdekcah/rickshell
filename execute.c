@@ -1,8 +1,18 @@
+/*
+ * execute.c — Tree-walking executor over the parsed syntax tree.
+ *
+ * The walker handles control flow (sequencing, background, and-or short
+ * circuiting, subshells, brace groups) and lowers each simple command and
+ * pipeline onto the lower-level execution layer: a transient Command carries the
+ * fully expanded argv and redirections to handle_redirection() and
+ * execute_pipeline(), which own the process-group and terminal handling.
+ * Expansion happens here, once, before a Command is built, so nothing
+ * downstream re-expands.
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <ctype.h>
 #include <fcntl.h>
 #include <sys/wait.h>
 #include <signal.h>
@@ -20,12 +30,10 @@
 #include "strconv.h"
 #include "rstring.h"
 #include "array.h"
+#include "ast.h"
+#include "parser.h"
+#include "expand.h"
 
-extern int yyparse(void);
-extern int yylex_destroy(void);
-extern void yy_scan_string(const char *str);
-
-extern CommandList* command_list;
 extern VariableTable* variable_table;
 
 int rexecvp(const string __file, StringArray __argv) {
@@ -71,361 +79,558 @@ int rexecvp(const string __file, StringArray __argv) {
   return result;
 }
 
-IntResult execute_command(Command* cmd, int* result) {
-  register size_t i;
-  if (cmd == NULL || cmd->argv.size == 0 || string__is_null_or_empty(*(string*)array_get(cmd->argv, 0))) return Err(
-    _SLIT("Invalid command"),
-    ERRCODE_INVALID_ARGUMENT
-  );
+IntResult execute_node(Node* node, int* result);
 
-  for (i = 0; i < cmd->argv.size; i++) {
-    string elem = *(string*)array_get(cmd->argv, i);
-    string expanded = expand_variables(variable_table, elem);
-    string__free(elem);
-    array_index_set(&cmd->argv, i, &expanded);
+/* ---- redirection lowering ---- */
+
+static bool map_redir_type(TokenType op, RedirectType* rt, int* deffd) {
+  switch (op) {
+    case TOK_LESS:       *rt = REDIRECT_INPUT;       *deffd = STDIN_FILENO;  return true;
+    case TOK_GREAT:
+    case TOK_CLOBBER:    *rt = REDIRECT_OUTPUT;      *deffd = STDOUT_FILENO; return true;
+    case TOK_DGREAT:     *rt = REDIRECT_APPEND;      *deffd = STDOUT_FILENO; return true;
+    case TOK_LESSAND:    *rt = REDIRECT_INPUT_DUP;   *deffd = STDIN_FILENO;  return true;
+    case TOK_GREATAND:   *rt = REDIRECT_OUTPUT_DUP;  *deffd = STDOUT_FILENO; return true;
+    case TOK_DGREATAND:  *rt = REDIRECT_APPEND_DUP;  *deffd = STDOUT_FILENO; return true;
+    default:             return false;
   }
+}
 
-  string felem = *(string*)array_get(cmd->argv, 0);
-  bool should_not_expand = do_not_expand_this_builtin(felem);
-  ssize_t equals_sign_index = string__indexof(felem, _SLIT("="));
-  ssize_t open_bracket_index = string__indexof(felem, _SLIT("["));
-  ssize_t close_bracket_index = string__lastindexof(felem, _SLIT("]"));
-  if (equals_sign_index != -1 && !should_not_expand) {
-    string name = string__substring(felem, 0, equals_sign_index);
-    string value = string__substring(felem, equals_sign_index + 1);
-
-    if (string__is_null_or_empty(value) && cmd->argv.size > 1) {
-      string next = *(string*)array_get(cmd->argv, 1);
-      string temp = string__from(next);
-      string__free(value);
-      value = temp;
-    }
-
-    if (open_bracket_index != -1 && close_bracket_index != -1 && open_bracket_index < close_bracket_index && equals_sign_index) {
-      string key = string__substring(felem, open_bracket_index + 1, close_bracket_index);
-      string _name = string__substring(felem, 0, open_bracket_index);
-      string _value = (cmd->argv.size > 1) ? string__from(*(string*)array_get(cmd->argv, 1)) : _SLIT("");
-
-      Variable* var = get_variable(variable_table, _name);
-      if (var != NULL && var->value.type == VAR_ASSOCIATIVE_ARRAY) {
-        set_associative_array_variable(variable_table, _name, key, _value);
-      } else if (var != NULL && var->value.type == VAR_ARRAY) {
-        long long index;
-        StrconvResult _result = ratoll(key, &index);
-        if (_result.is_err) {
-          string__free(_name);
-          string__free(_value);
-          string__free(key);
-          return Err(
-            _SLIT("Invalid key for array"),
-            ERRCODE_ARRAY_INVALID_INDEX
-          );
-        }
-        array_set_element(variable_table, _name, (size_t)index, _value);
-      } else {
-        return Err(
-          _SLIT("Variable is not an array or associative array"),
-          ERRCODE_VAR_TYPE_DISMATCH
-        );
-      }
-      string__free(_name);
-      string__free(_value);
-      string__free(key);
-    } else if (string__startswith(value, _SLIT("(")) && string__endswith(value, _SLIT(")"))) {
-      parse_and_set_array(variable_table, name, value);
-    } else if (string__startswith(value, _SLIT("{")) && string__endswith(value, _SLIT("}"))) {
-      parse_and_set_associative_array(variable_table, name, value);
+/* Expands each redirection target and records it on @p cmd in execution form. */
+static void lower_redirs(Command* cmd, const Redir* redirs, size_t n) {
+  for (size_t i = 0; i < n; i++) {
+    const Redir* r = &redirs[i];
+    string tgt = expand_word_to_string(variable_table, r->target);
+    if (r->op == TOK_LESSGREAT) {
+      add_redirect(cmd, REDIRECT_INPUT, STDIN_FILENO, tgt);
+      add_redirect(cmd, REDIRECT_OUTPUT, STDOUT_FILENO, tgt);
     } else {
-      Variable* var = set_variable(variable_table, name, value, parse_variable_type(value), false);
-      if (var == NULL) {
-        string__free(name);
-        string__free(value);
-        return Err(
-          _SLIT("Failed to set variable"),
-          ERRCODE_VAR_SET_FAILED
-        );
+      RedirectType rt;
+      int deffd;
+      if (map_redir_type(r->op, &rt, &deffd)) {
+        int fd = (r->fd >= 0) ? r->fd : deffd;
+        add_redirect(cmd, rt, fd, tgt);
       }
     }
-    string__free(name);
-    string__free(value);
-    return Ok(NULL);
-  } else if (should_not_expand) {
-    StringArray _argv = array_clone_from(cmd->argv);
-    array_free(&cmd->argv);
-    cmd->argv = create_array_with_capacity(sizeof(string), _argv.capacity);
-    for (i = 0; i < _argv.size; i++) {
-      string elem = *(string*)array_get(_argv, i);
-      if (string__length(elem) > 0 && string__indexof(elem, _SLIT("=")) != -1) {
-        if (i + 1 < _argv.size) {
-          string next = *(string*)array_get(_argv, i + 1);
-          string new_elem = string__concat(elem, next);
-          string__free(elem);
-          string__free(next);
-          array_push(&cmd->argv, &new_elem);
-          i++;
-        } else {
-          array_push(&cmd->argv, &elem);
-        }
-      } else {
-        array_push(&cmd->argv, &elem);
-      }
+    string__free(tgt);
+  }
+}
+
+/* ---- saved standard descriptors for in-process redirection ---- */
+
+typedef struct {
+  int fd0;
+  int fd1;
+  int fd2;
+} SavedFds;
+
+static SavedFds fds_save(void) {
+  SavedFds s;
+  s.fd0 = dup(STDIN_FILENO);
+  s.fd1 = dup(STDOUT_FILENO);
+  s.fd2 = dup(STDERR_FILENO);
+  return s;
+}
+
+static void fds_restore(SavedFds s) {
+  if (s.fd0 != -1) { dup2(s.fd0, STDIN_FILENO);  close(s.fd0); }
+  if (s.fd1 != -1) { dup2(s.fd1, STDOUT_FILENO); close(s.fd1); }
+  if (s.fd2 != -1) { dup2(s.fd2, STDERR_FILENO); close(s.fd2); }
+}
+
+/* ---- assignments ---- */
+
+static bool is_name_char(char c) {
+  return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9');
+}
+
+/* True when @p w has the form name=..., name[key]=... or name+=... in its first
+ * unquoted literal segment. */
+static bool word_is_assignment(const Word* w) {
+  if (w->size == 0) return false;
+  const WordSeg* s0 = &w->data[0];
+  if (s0->kind != SEG_LITERAL || s0->quoted) return false;
+  const char* t = s0->text.str;
+  size_t n = s0->text.len;
+  if (n == 0) return false;
+  if (!(t[0] == '_' || (t[0] >= 'a' && t[0] <= 'z') || (t[0] >= 'A' && t[0] <= 'Z'))) return false;
+  size_t i = 1;
+  while (i < n && is_name_char(t[i])) i++;
+  if (i < n && t[i] == '[') {
+    int depth = 1;
+    i++;
+    while (i < n && depth > 0) {
+      if (t[i] == '[') depth++;
+      else if (t[i] == ']') depth--;
+      i++;
     }
-    array_free(&_argv);
+  }
+  if (i < n && t[i] == '+') i++;
+  return i < n && t[i] == '=';
+}
+
+static void apply_assignment(VariableTable* table, const string name, const string value) {
+  ssize_t ob = string__indexof(name, _SLIT("["));
+  ssize_t cb = string__lastindexof(name, _SLIT("]"));
+  if (ob != -1 && cb != -1 && ob < cb) {
+    string base = string__substring(name, 0, ob);
+    string key = string__substring(name, ob + 1, cb);
+    Variable* var = get_variable(table, base);
+    if (var != NULL && var->value.type == VAR_ASSOCIATIVE_ARRAY) {
+      set_associative_array_variable(table, base, key, value);
+    } else if (var != NULL && var->value.type == VAR_ARRAY) {
+      long long idx;
+      StrconvResult sr = ratoll(key, &idx);
+      if (!sr.is_err && idx >= 0)
+        array_set_element(table, base, (size_t)idx, value);
+    }
+    string__free(base);
+    string__free(key);
+    return;
+  }
+  if (string__startswith(value, _SLIT("(")) && string__endswith(value, _SLIT(")"))) {
+    parse_and_set_array(table, name, value);
+    return;
+  }
+  if (string__startswith(value, _SLIT("{")) && string__endswith(value, _SLIT("}"))) {
+    parse_and_set_associative_array(table, name, value);
+    return;
+  }
+  set_variable(table, name, value, parse_variable_type(value), false);
+}
+
+/* Applies one assignment word, expanding its right-hand side without splitting. */
+static void apply_assignment_word(VariableTable* table, const Word* w) {
+  const string t0 = w->data[0].text;
+  ssize_t eq = string__indexof(t0, _SLIT("="));
+  if (eq < 0) return;
+  ssize_t nameend = eq;
+  if (nameend > 0 && t0.str[nameend - 1] == '+') nameend--;
+  string name = string__substring(t0, 0, nameend);
+
+  Word* vw = word_new();
+  string rem = string__substring(t0, eq + 1);
+  word_push(vw, SEG_LITERAL, rem, false);
+  for (size_t k = 1; k < w->size; k++)
+    word_push(vw, w->data[k].kind, string__from(w->data[k].text), w->data[k].quoted);
+  string value = expand_word_to_string(table, vw);
+  word_free(vw);
+
+  apply_assignment(table, name, value);
+  string__free(name);
+  string__free(value);
+}
+
+/* ---- simple-command construction ---- */
+
+static void move_fields(Command* cmd, StringArray* fields) {
+  for (size_t i = 0; i < fields->size; i++) {
+    string* f = array_get(*fields, i);
+    array_push(&cmd->argv, f);
+  }
+  array_free(fields);
+}
+
+/*
+ * Expands a simple command's words into @p cmd->argv and lowers its
+ * redirections. Leading assignment words are removed from the argument list;
+ * when @p standalone they are applied to the shell, otherwise (a pipeline
+ * stage) they are dropped since a forked stage cannot persist them.
+ */
+static void build_simple(Node* node, Command* cmd, bool standalone) {
+  Word** words = node->u.simple.words;
+  size_t nwords = node->u.simple.nwords;
+
+  size_t wi = 0;
+  while (wi < nwords && word_is_assignment(words[wi])) {
+    if (standalone) apply_assignment_word(variable_table, words[wi]);
+    wi++;
   }
 
-  *result = execute_builtin(cmd);
-  if (*result != -1)
-    return Ok(NULL);
+  bool assign_builtin = false;
+  for (; wi < nwords; wi++) {
+    Word* w = words[wi];
+    if (cmd->argv.size == 0) {
+      StringArray fields = expand_word_to_fields(variable_table, w);
+      move_fields(cmd, &fields);
+      if (cmd->argv.size > 0)
+        assign_builtin = do_not_expand_this_builtin(*(string*)array_get(cmd->argv, 0));
+    } else if (assign_builtin && word_is_assignment(w)) {
+      string s = expand_word_to_string(variable_table, w);
+      array_push(&cmd->argv, &s);
+    } else {
+      StringArray fields = expand_word_to_fields(variable_table, w);
+      move_fields(cmd, &fields);
+    }
+  }
 
-  /* Run external foreground commands in their own process group and hand them
-   * the controlling terminal, so a terminal-generated SIGINT (Ctrl-C) is
-   * delivered to the command -- not to the shell. */
-  int fg = job_control_active();
+  lower_redirs(cmd, node->u.simple.redirs, node->u.simple.nredirs);
+}
+
+/* ---- command substitution ---- */
+
+string command_substitution(const string src) {
+  int pfd[2];
+  if (pipe(pfd) == -1) return string__new("");
+
+  /* Flush before forking so inherited buffered output is not captured into the
+   * substitution result. */
+  fflush(NULL);
   pid_t pid = fork();
-  if (pid == -1) {
-    return Err(
-      _SLIT("Fork failed"),
-      ERRCODE_EXEC_FORK_FAILED
-    );
-  } else if (pid == 0) {
+  if (pid == 0) {
+    close(pfd[0]);
+    dup2(pfd[1], STDOUT_FILENO);
+    close(pfd[1]);
+    reset_child_signals();
+
+    Node* tree = NULL;
+    string err = _SLIT0;
+    int st = 0;
+    if (parse_program(src.str, &tree, &err)) {
+      if (tree != NULL) {
+        execute_node(tree, &st);
+        node_free(tree);
+      }
+    } else {
+      print_error(err);
+      string__free(err);
+      st = 1;
+    }
+    fflush(NULL);
+    _exit(st & 0xff);
+  } else if (pid > 0) {
+    close(pfd[1]);
+    StringBuilder sb = string_builder__new();
+    char buf[4096];
+    ssize_t rd;
+    while ((rd = read(pfd[0], buf, sizeof(buf) - 1)) > 0) {
+      buf[rd] = '\0';
+      string_builder__append_cstr(&sb, buf);
+    }
+    close(pfd[0]);
+    int status;
+    while (waitpid(pid, &status, 0) < 0 && errno == EINTR) { }
+    string out = string_builder__to_string(&sb);
+    string_builder__free(&sb);
+    return out;
+  }
+
+  close(pfd[0]);
+  close(pfd[1]);
+  return string__new("");
+}
+
+/* ---- node executors ---- */
+
+static IntResult run_simple(Node* node, int* result) {
+  Command* cmd = create_command();
+  build_simple(node, cmd, true);
+
+  if (cmd->argv.size == 0) {
+    if (cmd->redirects.size > 0) {
+      SavedFds saved = fds_save();
+      Result r = handle_redirection(cmd);
+      fds_restore(saved);
+      if (r.is_err) {
+        report_error(r);
+        string__free(r.err.msg);
+        *result = 1;
+      } else {
+        *result = 0;
+      }
+    } else {
+      *result = 0;
+    }
+    free_command(cmd);
+    return Ok(NULL);
+  }
+
+  string argv0 = *(string*)array_get(cmd->argv, 0);
+  if (get_builtin_func(argv0) != NULL) {
+    SavedFds saved = fds_save();
+    Result r = handle_redirection(cmd);
+    if (r.is_err) {
+      report_error(r);
+      string__free(r.err.msg);
+      *result = 1;
+    } else {
+      *result = execute_builtin(cmd);
+    }
+    /* Flush the builtin's buffered output while the redirection is still in
+     * effect; restoring the descriptors first would send it to the terminal. */
+    fflush(stdout);
+    fflush(stderr);
+    fds_restore(saved);
+    free_command(cmd);
+    return Ok(NULL);
+  }
+
+  Result r = execute_pipeline(cmd, result);
+  free_command(cmd);
+  NTRY(r);
+  return Ok(NULL);
+}
+
+static IntResult run_pipeline(Node* node, int* result) {
+  size_t cnt = node->u.pipeline.n;
+  bool bang = node->u.pipeline.bang;
+
+  if (cnt == 1) {
+    IntResult r = execute_node(node->u.pipeline.cmds[0], result);
+    if (!r.is_err && bang) *result = (*result == 0) ? 1 : 0;
+    return r;
+  }
+
+  Command* head = NULL;
+  for (size_t i = 0; i < cnt; i++) {
+    Node* st = node->u.pipeline.cmds[i];
+    if (st->type != NODE_SIMPLE) {
+      for (Command* c = head; c != NULL;) {
+        Command* nx = c->next;
+        free_command(c);
+        c = nx;
+      }
+      return Err(_SLIT("compound command in a pipeline is not supported yet"), ERRCODE_EXEC_FAILED);
+    }
+    Command* c = create_command();
+    build_simple(st, c, false);
+    if (head == NULL) head = c;
+    else add_pipeline(head, c);
+  }
+
+  Result r = execute_pipeline(head, result);
+  for (Command* c = head; c != NULL;) {
+    Command* nx = c->next;
+    free_command(c);
+    c = nx;
+  }
+  if (!r.is_err && bang) *result = (*result == 0) ? 1 : 0;
+  NTRY(r);
+  return Ok(NULL);
+}
+
+static IntResult run_subshell(Node* node, int* result) {
+  int fg = job_control_active();
+  /* Drain buffered output before forking so the child does not inherit and
+   * re-emit it. */
+  fflush(NULL);
+  pid_t pid = fork();
+  if (pid == -1)
+    return Err(_SLIT("Fork failed"), ERRCODE_EXEC_FORK_FAILED);
+
+  if (pid == 0) {
     if (fg) {
       setpgid(0, 0);
       give_terminal_to(getpid());
     }
     reset_child_signals();
-    Result r = handle_redirection(cmd);
-    if (r.is_err) {
-      report_error(r);
-      _exit(EXIT_FAILURE);
-    }
-
-    rexecvp(felem, cmd->argv);
-    print_error(_SLIT("Execvp failed"));
-    _exit(EXIT_FAILURE);
-  } else {
-    /* Mirror setpgid()/tcsetpgrp() in the parent too, so the group and terminal
-     * ownership are established regardless of which process is scheduled first. */
-    if (fg) {
-      setpgid(pid, pid);
-      give_terminal_to(pid);
-    }
-    int status;
-    if (waitpid(pid, &status, 0) == -1) {
-      if (fg) reclaim_terminal();
-      return Err(
-        _SLIT("Waitpid failed"),
-        ERRCODE_EXEC_WAIT_FAILED
-      );
-    }
-    if (fg) reclaim_terminal();
-
-    if (WIFEXITED(status)) {
-      *result = WEXITSTATUS(status);
-      return Ok(NULL);
-    } else if (WIFSIGNALED(status)) {
-      int sig = WTERMSIG(status);
-      if (sig == SIGINT) {
-        /* Ctrl-C: the tty already echoed "^C"; just start a clean line. */
-        ssize_t w = write(STDOUT_FILENO, "\n", 1);
-        (void)w;
-      } else {
-        ffprintln(stderr, "Command terminated by signal %d", sig);
+    if (node->u.group.nredirs > 0) {
+      Command* rc = create_command();
+      lower_redirs(rc, node->u.group.redirs, node->u.group.nredirs);
+      Result rr = handle_redirection(rc);
+      free_command(rc);
+      if (rr.is_err) {
+        report_error(rr);
+        _exit(1);
       }
-      *result = 128 + sig;
-      return Ok(NULL);
     }
+    int st = 0;
+    execute_node(node->u.group.body, &st);
+    fflush(NULL);  /* flush builtin output before _exit, which does not */
+    _exit(st & 0xff);
   }
 
-  *result = -1;
+  if (fg) {
+    setpgid(pid, pid);
+    give_terminal_to(pid);
+  }
+  int status;
+  if (waitpid(pid, &status, 0) == -1) {
+    if (fg) reclaim_terminal();
+    return Err(_SLIT("Waitpid failed"), ERRCODE_EXEC_WAIT_FAILED);
+  }
+  if (fg) reclaim_terminal();
+
+  if (WIFEXITED(status)) {
+    *result = WEXITSTATUS(status);
+  } else if (WIFSIGNALED(status)) {
+    int sig = WTERMSIG(status);
+    if (sig == SIGINT) {
+      ssize_t w = write(STDOUT_FILENO, "\n", 1);
+      (void)w;
+    }
+    *result = 128 + sig;
+  } else {
+    *result = -1;
+  }
   return Ok(NULL);
 }
 
-string command_to_string(Command* cmd) {
-  if (cmd == NULL) return _SLIT0;
-  register size_t i;
+static IntResult run_group(Node* node, int* result) {
+  bool redir = node->u.group.nredirs > 0;
+  Command* rc = NULL;
+  SavedFds saved = {-1, -1, -1};
 
-  StringBuilder sb = string_builder__new();
-  for (i = 0; i < cmd->argv.size; i++) {
-    string elem = *(string*)array_get(cmd->argv, i);
-    string_builder__append(&sb, elem);
-    if (i < cmd->argv.size - 1) {
-      string_builder__append(&sb, _SLIT(" "));
+  if (redir) {
+    rc = create_command();
+    lower_redirs(rc, node->u.group.redirs, node->u.group.nredirs);
+    saved = fds_save();
+    Result rr = handle_redirection(rc);
+    if (rr.is_err) {
+      report_error(rr);
+      string__free(rr.err.msg);
+      fds_restore(saved);
+      free_command(rc);
+      *result = 1;
+      return Ok(NULL);
     }
   }
 
-  for (i = 0; i < cmd->redirects.size; i++) {
-    Redirect* redir = &cmd->redirects.data[i];
-    string redir_str = _SLIT0;
-    switch (redir->type) {
-      case REDIRECT_INPUT:
-        redir_str = _SLIT(" < ");
-        break;
-      case REDIRECT_OUTPUT:
-        redir_str = _SLIT(" > ");
-        break;
-      case REDIRECT_APPEND:
-        redir_str = _SLIT(" >> ");
-        break;
-      case REDIRECT_INPUT_DUP:
-        redir_str = _SLIT(" <&");
-        break;
-      case REDIRECT_OUTPUT_DUP:
-        redir_str = _SLIT(" >&");
-        break;
-      case REDIRECT_APPEND_DUP:
-        redir_str = _SLIT(" >>&");
-        break;
-      default:
-        print_error(_SLIT("Unknown redirect type"));
-        string_builder__free(&sb);
-        return _SLIT0;
-    }
+  IntResult r = execute_node(node->u.group.body, result);
 
-    string_builder__append(&sb, redir_str);
-    string target = string__from(redir->target);
-    string_builder__append(&sb, target);
+  if (redir) {
+    /* Flush buffered output from the group's builtins before the descriptors
+     * are restored. */
+    fflush(stdout);
+    fflush(stderr);
+    fds_restore(saved);
+    free_command(rc);
   }
-
-  if (cmd->background) 
-    string_builder__append(&sb, _SLIT(" &"));
-
-  string result = string_builder__to_string(&sb);
-  string_builder__free(&sb);
-  return result;
+  return r;
 }
 
-string command_list_to_string(CommandList* list) {
-  if (list == NULL || list->head == NULL) return _SLIT0;
-
-  Command* cmd = list->head;
-  StringBuilder sb = string_builder__new();
-  while (cmd != NULL) {
-    string cmd_str = command_to_string(cmd);
-    if (string__is_null_or_empty(cmd_str)) {
-      string_builder__free(&sb);
-      return _SLIT0;
+static IntResult run_and_or(Node* node, int* result) {
+  size_t cnt = node->u.and_or.n;
+  for (size_t i = 0; i < cnt; i++) {
+    if (i > 0) {
+      char op = node->u.and_or.ops[i];
+      if (op == 'a' && *result != 0) continue;
+      if (op == 'o' && *result == 0) continue;
     }
-    string_builder__append(&sb, cmd_str);
-    string__free(cmd_str);
-
-    if (cmd->next != NULL) {
-      const string separator = cmd->and_next ? _SLIT(" && ") :
-                               cmd->or_next ? _SLIT(" || ") :
-                               cmd->semi_next ? _SLIT("; ") : _SLIT(" | ");
-      string_builder__append(&sb, separator);
-    }
-    cmd = cmd->next;
-  }
-
-  string result = string_builder__to_string(&sb);
-  string_builder__free(&sb);
-  return result;
-}
-
-IntResult execute_command_list(CommandList* list, int* result) {
-  if (list == NULL || list->head == NULL) return Err(
-    _SLIT("Invalid command list"),
-    ERRCODE_INVALID_ARGUMENT
-  );
-
-  Command* cmd = list->head;
-
-  bool background = false;
-  Command* last_cmd = list->tail;
-  if (last_cmd && last_cmd->background) {
-    background = true;
-    last_cmd->background = false;
-  }
-
-  if (background) {
-    string command_line = command_list_to_string(list);
-    if (string__is_null_or_empty(command_line)) return Err(
-      _SLIT("Failed to convert command list to string"),
-      ERRCODE_ERR
-    );
-    Result r = execute_background_job(list, command_line, result);
-    string__free(command_line);
+    IntResult r = execute_node(node->u.and_or.items[i], result);
     NTRY(r);
-    return Ok(NULL);
   }
+  return Ok(NULL);
+}
 
-  while (cmd != NULL) {
-    if (cmd->pipline_next) {
-      Result r = execute_pipeline(cmd, result);
-      NTRY(r);
-      while (cmd != NULL && cmd->pipline_next)
-        cmd = cmd->next;
-    } else {
-      Result r = execute_command(cmd, result);
-      NTRY(r);
-      if (*result != 0 && cmd->and_next)
+/* Reconstructs an approximate source line for the jobs list display. */
+static void describe_word(StringBuilder* sb, const Word* w) {
+  for (size_t i = 0; i < w->size; i++) {
+    const WordSeg* s = &w->data[i];
+    switch (s->kind) {
+      case SEG_LITERAL: string_builder__append(sb, s->text); break;
+      case SEG_PARAM:   string_builder__append(sb, s->text); break;
+      case SEG_ARITH:
+        string_builder__append_cstr(sb, "$((");
+        string_builder__append(sb, s->text);
+        string_builder__append_cstr(sb, "))");
         break;
-      if (*result == 0 && cmd->or_next)
+      case SEG_COMMAND:
+        string_builder__append_cstr(sb, "$(");
+        string_builder__append(sb, s->text);
+        string_builder__append_cstr(sb, ")");
         break;
     }
-    if (cmd != NULL) cmd = cmd->next;
   }
-  
+}
+
+static void describe_node(StringBuilder* sb, const Node* node) {
+  switch (node->type) {
+    case NODE_SIMPLE:
+      for (size_t i = 0; i < node->u.simple.nwords; i++) {
+        if (i > 0) string_builder__append_char(sb, ' ');
+        describe_word(sb, node->u.simple.words[i]);
+      }
+      break;
+    case NODE_PIPELINE:
+      if (node->u.pipeline.bang) string_builder__append_cstr(sb, "! ");
+      for (size_t i = 0; i < node->u.pipeline.n; i++) {
+        if (i > 0) string_builder__append_cstr(sb, " | ");
+        describe_node(sb, node->u.pipeline.cmds[i]);
+      }
+      break;
+    case NODE_AND_OR:
+      for (size_t i = 0; i < node->u.and_or.n; i++) {
+        if (i > 0)
+          string_builder__append_cstr(sb, node->u.and_or.ops[i] == 'a' ? " && " : " || ");
+        describe_node(sb, node->u.and_or.items[i]);
+      }
+      break;
+    case NODE_LIST:
+      for (size_t i = 0; i < node->u.list.n; i++) {
+        if (i > 0) string_builder__append_cstr(sb, "; ");
+        describe_node(sb, node->u.list.items[i]);
+      }
+      break;
+    case NODE_SUBSHELL:
+      string_builder__append_char(sb, '(');
+      describe_node(sb, node->u.group.body);
+      string_builder__append_char(sb, ')');
+      break;
+    case NODE_GROUP:
+      string_builder__append_cstr(sb, "{ ");
+      describe_node(sb, node->u.group.body);
+      string_builder__append_cstr(sb, "; }");
+      break;
+  }
+}
+
+static string node_describe(const Node* node) {
+  StringBuilder sb = string_builder__new();
+  describe_node(&sb, node);
+  string r = string_builder__to_string(&sb);
+  string_builder__free(&sb);
+  return r;
+}
+
+static IntResult run_list(Node* node, int* result) {
+  size_t cnt = node->u.list.n;
+  for (size_t i = 0; i < cnt; i++) {
+    Node* item = node->u.list.items[i];
+    if (node->u.list.seps[i] == '&') {
+      string desc = node_describe(item);
+      Result r = execute_background_job(item, desc, result);
+      string__free(desc);
+      NTRY(r);
+    } else {
+      IntResult r = execute_node(item, result);
+      NTRY(r);
+    }
+  }
+  return Ok(NULL);
+}
+
+IntResult execute_node(Node* node, int* result) {
+  if (node == NULL) return Ok(NULL);
+  switch (node->type) {
+    case NODE_LIST:     return run_list(node, result);
+    case NODE_AND_OR:   return run_and_or(node, result);
+    case NODE_PIPELINE: return run_pipeline(node, result);
+    case NODE_SIMPLE:   return run_simple(node, result);
+    case NODE_SUBSHELL: return run_subshell(node, result);
+    case NODE_GROUP:    return run_group(node, result);
+  }
   return Ok(NULL);
 }
 
 IntResult parse_and_execute(const string input, int* result) {
-  if (string__is_null_or_empty(input)) {
-    return Err(
-      _SLIT("Invalid input"),
-      ERRCODE_INVALID_INPUT
-    );
-  }
+  if (string__is_null_or_empty(input))
+    return Err(_SLIT("Invalid input"), ERRCODE_INVALID_INPUT);
 
-  char* saveptr;
-  char* cmd = strtok_r(input.str, ";", &saveptr);
   *result = 0;
-
-  while (cmd != NULL) {
-    while (isspace(*cmd)) cmd++;
-    if (*cmd != '\0') {
-      yy_scan_string(cmd);
-      command_list = NULL;
-      *result = yyparse();
-      yylex_destroy();
-      
-      if (*result == 0) {
-        if (command_list != NULL) {
-          bool background = false;
-          Command* last_cmd = command_list->tail;
-          if (last_cmd && last_cmd->background) {
-            background = true;
-            last_cmd->background = false;
-          }
-
-          if (background) {
-            string command_line = command_list_to_string(command_list);
-            if (!string__is_null_or_empty(command_line)) {
-              Result r = execute_background_job(command_list, command_line, result);
-              string__free(command_line);
-              NTRY(r);
-            }
-          } else {
-            Result r = execute_command_list(command_list, result);
-            NTRY(r);
-          }
-          free_command_list(command_list);
-          command_list = NULL;
-        } else {
-          return Err(
-            _SLIT("No commands to execute"),
-            ERRCODE_NO_COMMAND_TO_EXECUTE
-          );
-        }
-      } else {
-        return Err(
-          _SLIT("Failed to parse the command"),
-          ERRCODE_COMMAND_PARSE_FAILED
-        );
-      }
-    }
-    cmd = strtok_r(NULL, ";", &saveptr);
+  Node* tree = NULL;
+  string err = _SLIT0;
+  if (!parse_program(input.str, &tree, &err)) {
+    print_error(err);
+    string__free(err);
+    *result = 2;
+    return Ok(NULL);
   }
-  
-  return Ok(NULL);
+
+  if (tree == NULL)
+    return Ok(NULL);
+
+  IntResult r = execute_node(tree, result);
+  node_free(tree);
+  return r;
 }

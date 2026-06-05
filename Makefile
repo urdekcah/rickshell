@@ -22,7 +22,6 @@ READLINE_CFLAGS := -O3 -g0 -fvisibility=hidden -Wall \
                   -DHAVE_CONFIG_H -DNO_GETTIMEOFDAY
 
 SRCS := $(wildcard *.c) $(wildcard $(BUILTIN_LIB_DIR)/*.c)
-SRCS := $(filter-out lex.yy.c, $(SRCS))
 OBJS := $(SRCS:.c=.o)
 BUILTIN_OBJS := $(filter $(BUILTIN_LIB_DIR)/%.o,$(OBJS))
 MAIN_OBJS := $(filter-out $(BUILTIN_OBJS),$(OBJS))
@@ -43,7 +42,7 @@ clean_readline:
 $(READLINE_LIB): prepare_dirs
 	@echo "Building readline..."
 	cd $(READLINE_DIR) && \
-	./configure --disable-shared --enable-static \
+	sh ./configure --disable-shared --enable-static \
 		--disable-multibyte --disable-install-examples \
 		--with-curses \
 		ac_cv_func_gettimeofday=no && \
@@ -61,18 +60,15 @@ $(BUILTIN_LIB): $(BUILTIN_OBJS) | prepare_dirs
 
 build: $(READLINE_LIB) $(BUILTIN_LIB) $(TARGET)
 
-$(TARGET): $(MAIN_OBJS) lex.yy.o $(BUILTIN_LIB) $(READLINE_LIB)
+$(TARGET): $(MAIN_OBJS) $(BUILTIN_LIB) $(READLINE_LIB)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-lex.yy.o: lex.yy.c
-	$(CC) $(CFLAGS) -Wno-null-dereference -Wno-error=null-dereference -c $< -o $@
-
 clean_target: clean_readline
 	@echo "Cleaning up object files..."
-	@rm -f $(OBJS) lex.yy.o
+	@rm -f $(OBJS)
 	@rm -rf $(TARGET_DIR)
 
 clean: clean_target
