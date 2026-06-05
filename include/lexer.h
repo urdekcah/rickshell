@@ -1,10 +1,3 @@
-#ifndef __RICKSHELL_LEXER_H__
-#define __RICKSHELL_LEXER_H__
-#include <stdbool.h>
-#include <stddef.h>
-#include "word.h"
-#include "rstring.h"
-
 /*
  * lexer.h — Hand-written, mode-based tokenizer for the shell grammar.
  *
@@ -18,6 +11,12 @@
  * double-quoted, or unquoted, which the expansion pass needs to apply field
  * splitting and globbing correctly.
  */
+#ifndef __RICKSHELL_LEXER_H__
+#define __RICKSHELL_LEXER_H__
+#include <stdbool.h>
+#include <stddef.h>
+#include "word.h"
+#include "rstring.h"
 
 /**
  * @brief Token kinds produced by the lexer.
@@ -35,9 +34,13 @@ typedef enum {
   TOK_OR_IF,      /**< "||" */
   TOK_AND_IF,     /**< "&&" */
   TOK_SEMI,       /**< ";" */
+  TOK_DSEMI,      /**< ";;" (case-clause terminator) */
+  TOK_SEMI_AMP,   /**< ";&" (case-clause fall-through terminator) */
+  TOK_DSEMI_AMP,  /**< ";;&" (case-clause resume-testing terminator) */
   TOK_AMP,        /**< "&" */
   TOK_LPAREN,     /**< "(" */
   TOK_RPAREN,     /**< ")" */
+  TOK_ARITH,      /**< "(( expression ))"; payload is @c Token.word (one SEG_ARITH segment). */
   TOK_LESS,       /**< "<" */
   TOK_GREAT,      /**< ">" */
   TOK_DGREAT,     /**< ">>" */
@@ -53,13 +56,13 @@ typedef enum {
 /**
  * @brief A single lexed token.
  *
- * Ownership: when @c type is TOK_WORD, @c word is heap-owned and the caller
- * must release it (via word_free(), or token_free()). For all other kinds
- * @c word is NULL.
+ * Ownership: when @c type is TOK_WORD or TOK_ARITH, @c word is heap-owned and
+ * the caller must release it (via word_free(), or token_free()). For all other
+ * kinds @c word is NULL.
  */
 typedef struct {
   TokenType type;       /**< Token kind. */
-  Word*     word;       /**< Word payload when @c type is TOK_WORD, else NULL. */
+  Word*     word;       /**< Word payload for TOK_WORD and TOK_ARITH, else NULL. */
   int       io_number;  /**< File descriptor when @c type is TOK_IO_NUMBER, else 0. */
 } Token;
 
@@ -70,11 +73,13 @@ typedef struct {
  * lifetime. @c errmsg is owned by the lexer once @c error becomes true.
  */
 typedef struct {
-  const char* src;     /**< Borrowed, NUL-terminated source. Not freed by the lexer. */
-  size_t      len;     /**< Byte length of @c src. */
-  size_t      pos;     /**< Current scan offset into @c src. */
-  bool        error;   /**< True once a lexical error has been recorded. */
-  string      errmsg;  /**< Owned error description when @c error is true, else an empty literal. */
+  const char* src;        /**< Borrowed, NUL-terminated source. Not freed by the lexer. */
+  size_t      len;        /**< Byte length of @c src. */
+  size_t      pos;        /**< Current scan offset into @c src. */
+  bool        error;      /**< True once a lexical error has been recorded. */
+  bool        incomplete; /**< True when the error is end-of-input inside an unterminated
+                           *   quote or expansion, i.e. more input would complete it. */
+  string      errmsg;     /**< Owned error description when @c error is true, else an empty literal. */
 } Lexer;
 
 /**

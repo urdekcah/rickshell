@@ -12,9 +12,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
 #include <signal.h>
 #include <errno.h>
 #include "expr.h"
@@ -27,6 +29,8 @@
 #include "memory.h"
 #include "error.h"
 #include "variable.h"
+#include "function.h"
+#include "param.h"
 #include "strconv.h"
 #include "rstring.h"
 #include "array.h"
@@ -35,6 +39,53 @@
 #include "expand.h"
 
 extern VariableTable* variable_table;
+
+/* Exit status of the most recently executed command, exposed as "$?". Updated as
+ * the executor finishes each node so it is current within a multi-command line. */
+int shell_last_status = 0;
+
+/* ---- non-local control flow (break / continue / return) ---- */
+
+typedef enum {
+  FLOW_NORMAL,    /**< No pending control-flow transfer. */
+  FLOW_BREAK,     /**< A break is unwinding @c flow_count loop levels. */
+  FLOW_CONTINUE,  /**< A continue is unwinding to the @c flow_count-th loop. */
+  FLOW_RETURN,    /**< A return is unwinding to the enclosing function call. */
+} FlowKind;
+
+static FlowKind flow_kind = FLOW_NORMAL;  /* pending control-flow request, if any */
+static int      flow_count = 0;           /* loop levels targeted by break / continue */
+static int      loop_depth = 0;           /* enclosing for / while / until / select loops */
+static int      func_depth = 0;           /* enclosing function calls */
+
+static bool flow_pending(void) {
+  return flow_kind != FLOW_NORMAL;
+}
+
+/*
+ * Applies a pending break/continue to the loop finishing an iteration. Returns
+ * true when the loop must stop: always for break and return, and for a continue
+ * aimed at an outer loop. A continue aimed at this loop is cleared and reported
+ * as "keep iterating".
+ */
+static bool consume_loop_flow(void) {
+  switch (flow_kind) {
+    case FLOW_BREAK:
+      if (flow_count > 1) flow_count--;
+      else { flow_kind = FLOW_NORMAL; flow_count = 0; }
+      return true;
+    case FLOW_CONTINUE:
+      if (flow_count > 1) { flow_count--; return true; }
+      flow_kind = FLOW_NORMAL;
+      flow_count = 0;
+      return false;
+    case FLOW_RETURN:
+      return true;
+    case FLOW_NORMAL:
+    default:
+      return false;
+  }
+}
 
 int rexecvp(const string __file, StringArray __argv) {
   char* file_cstr = string__to_cstr(__file);
@@ -320,6 +371,70 @@ string command_substitution(const string src) {
   return string__new("");
 }
 
+/* ---- function calls and the break/continue/return special forms ---- */
+
+/* True for the words handled directly by the executor instead of being looked
+ * up as builtins or external commands. */
+static bool is_flow_word(const string name) {
+  return string__equals(name, _SLIT("break")) ||
+         string__equals(name, _SLIT("continue")) ||
+         string__equals(name, _SLIT("return"));
+}
+
+/* Records a break/continue/return request from an already-expanded argv. */
+static void handle_flow_builtin(Command* cmd, int* result) {
+  const string name = *(string*)array_get(cmd->argv, 0);
+  bool has_arg = cmd->argv.size > 1;
+  long long n = 0;
+  bool n_ok = false;
+  if (has_arg) {
+    StrconvResult sr = ratoll(*(string*)array_get(cmd->argv, 1), &n);
+    n_ok = !sr.is_err;
+  }
+
+  if (string__equals(name, _SLIT("return"))) {
+    if (has_arg && n_ok) *result = (int)(n & 0xff);
+    if (func_depth > 0) {
+      flow_kind = FLOW_RETURN;
+      flow_count = 0;
+    }
+    return;
+  }
+
+  /* break / continue are meaningful only inside a loop; elsewhere they succeed
+   * as a no-op. */
+  if (loop_depth == 0) { *result = 0; return; }
+  int levels = (has_arg && n_ok && n >= 1) ? (int)n : 1;
+  flow_kind = string__equals(name, _SLIT("break")) ? FLOW_BREAK : FLOW_CONTINUE;
+  flow_count = levels;
+  *result = 0;
+}
+
+/* Runs a function body with @p argv[1..] installed as the positional parameters,
+ * restoring the caller's parameters afterwards. A return inside the body unwinds
+ * here; a break/continue aimed at an enclosing loop is left pending. */
+static IntResult call_function(Node* body, StringArray* argv, int* result) {
+  StringArray new_params = create_array(sizeof(string));
+  for (size_t i = 1; i < argv->size; i++) {
+    string s = string__from(*(string*)array_get(*argv, i));
+    array_push(&new_params, &s);
+  }
+  StringArray saved = params_snapshot();
+  params_replace(new_params);
+
+  func_depth++;
+  IntResult r = execute_node(body, result);
+  func_depth--;
+
+  if (flow_kind == FLOW_RETURN) {
+    flow_kind = FLOW_NORMAL;
+    flow_count = 0;
+  }
+
+  params_replace(saved);
+  return r;
+}
+
 /* ---- node executors ---- */
 
 static IntResult run_simple(Node* node, int* result) {
@@ -346,6 +461,13 @@ static IntResult run_simple(Node* node, int* result) {
   }
 
   string argv0 = *(string*)array_get(cmd->argv, 0);
+
+  if (is_flow_word(argv0)) {
+    handle_flow_builtin(cmd, result);
+    free_command(cmd);
+    return Ok(NULL);
+  }
+
   if (get_builtin_func(argv0) != NULL) {
     SavedFds saved = fds_save();
     Result r = handle_redirection(cmd);
@@ -365,6 +487,27 @@ static IntResult run_simple(Node* node, int* result) {
     return Ok(NULL);
   }
 
+  /* A defined function shadows an external command of the same name; its body
+   * runs in this shell with the redirections applied around it. */
+  Node* fbody = find_function(argv0);
+  if (fbody != NULL) {
+    SavedFds saved = fds_save();
+    Result rr = handle_redirection(cmd);
+    IntResult fr = Ok(NULL);
+    if (rr.is_err) {
+      report_error(rr);
+      string__free(rr.err.msg);
+      *result = 1;
+    } else {
+      fr = call_function(fbody, &cmd->argv, result);
+    }
+    fflush(stdout);
+    fflush(stderr);
+    fds_restore(saved);
+    free_command(cmd);
+    return fr;
+  }
+
   Result r = execute_pipeline(cmd, result);
   free_command(cmd);
   NTRY(r);
@@ -377,7 +520,7 @@ static IntResult run_pipeline(Node* node, int* result) {
 
   if (cnt == 1) {
     IntResult r = execute_node(node->u.pipeline.cmds[0], result);
-    if (!r.is_err && bang) *result = (*result == 0) ? 1 : 0;
+    if (!r.is_err && !flow_pending() && bang) *result = (*result == 0) ? 1 : 0;
     return r;
   }
 
@@ -509,6 +652,7 @@ static IntResult run_and_or(Node* node, int* result) {
     }
     IntResult r = execute_node(node->u.and_or.items[i], result);
     NTRY(r);
+    if (flow_pending()) break;
   }
   return Ok(NULL);
 }
@@ -572,6 +716,50 @@ static void describe_node(StringBuilder* sb, const Node* node) {
       describe_node(sb, node->u.group.body);
       string_builder__append_cstr(sb, "; }");
       break;
+    case NODE_IF:
+      string_builder__append_cstr(sb, "if ");
+      describe_node(sb, node->u.if_clause.cond);
+      string_builder__append_cstr(sb, "; then ...; fi");
+      break;
+    case NODE_WHILE:
+      string_builder__append_cstr(sb, node->u.while_loop.until ? "until " : "while ");
+      describe_node(sb, node->u.while_loop.cond);
+      string_builder__append_cstr(sb, "; do ...; done");
+      break;
+    case NODE_FOR:
+      string_builder__append_cstr(sb, "for ");
+      string_builder__append(sb, node->u.for_loop.name);
+      string_builder__append_cstr(sb, "; do ...; done");
+      break;
+    case NODE_SELECT:
+      string_builder__append_cstr(sb, "select ");
+      string_builder__append(sb, node->u.for_loop.name);
+      string_builder__append_cstr(sb, "; do ...; done");
+      break;
+    case NODE_FOR_ARITH:
+      string_builder__append_cstr(sb, "for ((...)); do ...; done");
+      break;
+    case NODE_CASE:
+      string_builder__append_cstr(sb, "case ");
+      describe_word(sb, node->u.case_stmt.subject);
+      string_builder__append_cstr(sb, " in ...; esac");
+      break;
+    case NODE_ARITH:
+      string_builder__append_cstr(sb, "((");
+      string_builder__append(sb, node->u.arith.expr);
+      string_builder__append_cstr(sb, "))");
+      break;
+    case NODE_COND:
+      string_builder__append_cstr(sb, "[[ ... ]]");
+      break;
+    case NODE_FUNCDEF:
+      string_builder__append(sb, node->u.funcdef.name);
+      string_builder__append_cstr(sb, "() { ...; }");
+      break;
+    case NODE_REDIR:
+      describe_node(sb, node->u.group.body);
+      string_builder__append_cstr(sb, " >...");
+      break;
   }
 }
 
@@ -596,21 +784,325 @@ static IntResult run_list(Node* node, int* result) {
       IntResult r = execute_node(item, result);
       NTRY(r);
     }
+    if (flow_pending()) break;
   }
+  return Ok(NULL);
+}
+
+/* ---- [[ ]] conditional expression ---- */
+
+/* Evaluates a unary file/string test such as "-f file" or "-z str". */
+static bool eval_cond_unary(const string op, const Word* operand) {
+  string s = expand_word_to_string(variable_table, operand);
+  const char* p = s.str;
+  struct stat st;
+  bool res = false;
+
+  if (string__equals(op, _SLIT("-z")))      res = (s.len == 0);
+  else if (string__equals(op, _SLIT("-n"))) res = (s.len > 0);
+  else if (string__equals(op, _SLIT("-e"))) res = (access(p, F_OK) == 0);
+  else if (string__equals(op, _SLIT("-f"))) res = (stat(p, &st) == 0 && S_ISREG(st.st_mode));
+  else if (string__equals(op, _SLIT("-d"))) res = (stat(p, &st) == 0 && S_ISDIR(st.st_mode));
+  else if (string__equals(op, _SLIT("-r"))) res = (access(p, R_OK) == 0);
+  else if (string__equals(op, _SLIT("-w"))) res = (access(p, W_OK) == 0);
+  else if (string__equals(op, _SLIT("-x"))) res = (access(p, X_OK) == 0);
+  else if (string__equals(op, _SLIT("-s"))) res = (stat(p, &st) == 0 && st.st_size > 0);
+  else if (string__equals(op, _SLIT("-h")) || string__equals(op, _SLIT("-L")))
+    res = (lstat(p, &st) == 0 && S_ISLNK(st.st_mode));
+  else if (string__equals(op, _SLIT("-b"))) res = (stat(p, &st) == 0 && S_ISBLK(st.st_mode));
+  else if (string__equals(op, _SLIT("-c"))) res = (stat(p, &st) == 0 && S_ISCHR(st.st_mode));
+  else if (string__equals(op, _SLIT("-p"))) res = (stat(p, &st) == 0 && S_ISFIFO(st.st_mode));
+  else if (string__equals(op, _SLIT("-S"))) res = (stat(p, &st) == 0 && S_ISSOCK(st.st_mode));
+  else if (string__equals(op, _SLIT("-k"))) res = (stat(p, &st) == 0 && (st.st_mode & S_ISVTX) != 0);
+  else if (string__equals(op, _SLIT("-u"))) res = (stat(p, &st) == 0 && (st.st_mode & S_ISUID) != 0);
+  else if (string__equals(op, _SLIT("-g"))) res = (stat(p, &st) == 0 && (st.st_mode & S_ISGID) != 0);
+  else if (string__equals(op, _SLIT("-t"))) {
+    long long fd = 0;
+    StrconvResult sr = ratoll(s, &fd);
+    res = (!sr.is_err && isatty((int)fd) == 1);
+  } else if (string__equals(op, _SLIT("-v"))) {
+    res = (get_variable(variable_table, s) != NULL);
+  }
+
+  string__free(s);
+  return res;
+}
+
+/* Evaluates a binary test: pattern match (== != =), regex (=~), lexical compare
+ * (< >), arithmetic compare (-eq ...), or file relation (-nt -ot -ef). */
+static bool eval_cond_binary(const string op, const Word* left, const Word* right) {
+  string l = expand_word_to_string(variable_table, left);
+  bool res = false;
+
+  if (string__equals(op, _SLIT("=~"))) {
+    string r = expand_word_to_string(variable_table, right);
+    res = expand_regex_match(l, r);
+    string__free(r);
+  } else if (string__equals(op, _SLIT("==")) || string__equals(op, _SLIT("="))) {
+    res = expand_pattern_match(variable_table, l, right);
+  } else if (string__equals(op, _SLIT("!="))) {
+    res = !expand_pattern_match(variable_table, l, right);
+  } else {
+    string r = expand_word_to_string(variable_table, right);
+    if (string__equals(op, _SLIT("<"))) {
+      res = strcmp(l.str, r.str) < 0;
+    } else if (string__equals(op, _SLIT(">"))) {
+      res = strcmp(l.str, r.str) > 0;
+    } else if (string__equals(op, _SLIT("-nt")) || string__equals(op, _SLIT("-ot")) ||
+               string__equals(op, _SLIT("-ef"))) {
+      struct stat a, b;
+      bool oka = (stat(l.str, &a) == 0);
+      bool okb = (stat(r.str, &b) == 0);
+      if (string__equals(op, _SLIT("-nt")))      res = oka && (!okb || a.st_mtime > b.st_mtime);
+      else if (string__equals(op, _SLIT("-ot"))) res = okb && (!oka || a.st_mtime < b.st_mtime);
+      else res = oka && okb && a.st_dev == b.st_dev && a.st_ino == b.st_ino;
+    } else {
+      long long a = strtoll(l.str, NULL, 10);
+      long long b = strtoll(r.str, NULL, 10);
+      if (string__equals(op, _SLIT("-eq")))      res = (a == b);
+      else if (string__equals(op, _SLIT("-ne"))) res = (a != b);
+      else if (string__equals(op, _SLIT("-lt"))) res = (a < b);
+      else if (string__equals(op, _SLIT("-le"))) res = (a <= b);
+      else if (string__equals(op, _SLIT("-gt"))) res = (a > b);
+      else if (string__equals(op, _SLIT("-ge"))) res = (a >= b);
+    }
+    string__free(r);
+  }
+
+  string__free(l);
+  return res;
+}
+
+static bool eval_cond(const CondNode* c) {
+  if (c == NULL) return false;
+  switch (c->type) {
+    case COND_STRING: {
+      string s = expand_word_to_string(variable_table, c->left);
+      bool r = (s.len > 0);
+      string__free(s);
+      return r;
+    }
+    case COND_UNARY:  return eval_cond_unary(c->op, c->left);
+    case COND_BINARY: return eval_cond_binary(c->op, c->left, c->right);
+    case COND_NOT:    return !eval_cond(c->a);
+    case COND_AND:    return eval_cond(c->a) && eval_cond(c->b);
+    case COND_OR:     return eval_cond(c->a) || eval_cond(c->b);
+  }
+  return false;
+}
+
+static IntResult run_cond(Node* node, int* result) {
+  *result = eval_cond(node->u.cond.expr) ? 0 : 1;
+  return Ok(NULL);
+}
+
+static IntResult run_arith_cmd(Node* node, int* result) {
+  long long v = 0;
+  bool ok = expand_arith(variable_table, node->u.arith.expr, &v);
+  *result = (ok && v != 0) ? 0 : 1;
+  return Ok(NULL);
+}
+
+/* ---- compound statements ---- */
+
+static IntResult run_if(Node* node, int* result) {
+  int cond_status = 0;
+  IntResult r = execute_node(node->u.if_clause.cond, &cond_status);
+  NTRY(r);
+  if (flow_pending()) { *result = cond_status; return Ok(NULL); }
+  if (cond_status == 0)
+    return execute_node(node->u.if_clause.then_body, result);
+  if (node->u.if_clause.else_part != NULL)
+    return execute_node(node->u.if_clause.else_part, result);
+  *result = 0;
+  return Ok(NULL);
+}
+
+static IntResult run_while(Node* node, int* result) {
+  bool until = node->u.while_loop.until;
+  *result = 0;
+  loop_depth++;
+  for (;;) {
+    int cond_status = 0;
+    IntResult r = execute_node(node->u.while_loop.cond, &cond_status);
+    if (r.is_err) { loop_depth--; return r; }
+    if (flow_pending()) break;
+    bool go = until ? (cond_status != 0) : (cond_status == 0);
+    if (!go) break;
+    r = execute_node(node->u.while_loop.body, result);
+    if (r.is_err) { loop_depth--; return r; }
+    if (consume_loop_flow()) break;
+  }
+  loop_depth--;
+  return Ok(NULL);
+}
+
+/* Builds a for/select loop's iteration list from its words, or from the
+ * positional parameters when the "in" list was omitted. Moves expanded fields
+ * into the result; the caller releases it with free_loop_items(). */
+static StringArray build_loop_items(Node* node) {
+  StringArray items = create_array(sizeof(string));
+  if (node->u.for_loop.have_in) {
+    for (size_t i = 0; i < node->u.for_loop.nwords; i++) {
+      StringArray fields = expand_word_to_fields(variable_table, node->u.for_loop.words[i]);
+      for (size_t j = 0; j < fields.size; j++)
+        array_push(&items, array_get(fields, j));
+      array_free(&fields);
+    }
+  } else {
+    StringArray all = params_snapshot();
+    for (size_t j = 0; j < all.size; j++)
+      array_push(&items, array_get(all, j));
+    array_free(&all);
+  }
+  return items;
+}
+
+static void free_loop_items(StringArray* items) {
+  for (size_t i = 0; i < items->size; i++)
+    string__free(*(string*)array_get(*items, i));
+  array_free(items);
+}
+
+static IntResult run_for(Node* node, int* result) {
+  *result = 0;
+  StringArray items = build_loop_items(node);
+  loop_depth++;
+  for (size_t i = 0; i < items.size; i++) {
+    set_variable(variable_table, node->u.for_loop.name,
+                 *(string*)array_get(items, i), VAR_STRING, false);
+    IntResult r = execute_node(node->u.for_loop.body, result);
+    if (r.is_err) { loop_depth--; free_loop_items(&items); return r; }
+    if (consume_loop_flow()) break;
+  }
+  loop_depth--;
+  free_loop_items(&items);
+  return Ok(NULL);
+}
+
+static IntResult run_for_arith(Node* node, int* result) {
+  *result = 0;
+  long long scratch = 0;
+  if (node->u.for_arith.init.len > 0)
+    expand_arith(variable_table, node->u.for_arith.init, &scratch);
+  loop_depth++;
+  for (;;) {
+    if (node->u.for_arith.cond.len > 0) {
+      long long cv = 0;
+      bool ok = expand_arith(variable_table, node->u.for_arith.cond, &cv);
+      if (!ok || cv == 0) break;
+    }
+    IntResult r = execute_node(node->u.for_arith.body, result);
+    if (r.is_err) { loop_depth--; return r; }
+    if (consume_loop_flow()) break;
+    if (node->u.for_arith.update.len > 0)
+      expand_arith(variable_table, node->u.for_arith.update, &scratch);
+  }
+  loop_depth--;
+  return Ok(NULL);
+}
+
+static IntResult run_case(Node* node, int* result) {
+  *result = 0;
+  string subject = expand_word_to_string(variable_table, node->u.case_stmt.subject);
+  bool fall = false;  /* set by ";&" to run the next clause's body unconditionally */
+  for (size_t i = 0; i < node->u.case_stmt.nitems; i++) {
+    CaseItem* item = &node->u.case_stmt.items[i];
+    bool hit = fall;
+    if (!hit) {
+      for (size_t j = 0; j < item->npatterns; j++) {
+        if (expand_pattern_match(variable_table, subject, item->patterns[j])) {
+          hit = true;
+          break;
+        }
+      }
+    }
+    if (!hit) continue;
+    IntResult r = execute_node(item->body, result);
+    if (r.is_err) { string__free(subject); return r; }
+    if (flow_pending()) break;
+    if (item->terminator == 1) { fall = true; continue; }   /* ";&"  fall through */
+    if (item->terminator == 2) { fall = false; continue; }  /* ";;&" keep testing */
+    break;                                                  /* ";;"  done */
+  }
+  string__free(subject);
+  return Ok(NULL);
+}
+
+static IntResult run_select(Node* node, int* result) {
+  *result = 0;
+  StringArray items = build_loop_items(node);
+  if (items.size == 0) { free_loop_items(&items); return Ok(NULL); }
+
+  loop_depth++;
+  bool show_menu = true;
+  for (;;) {
+    if (show_menu) {
+      for (size_t i = 0; i < items.size; i++)
+        fprintf(stderr, "%zu) %s\n", i + 1, ((string*)array_get(items, i))->str);
+      show_menu = false;
+    }
+    fputs("#? ", stderr);
+    fflush(stderr);
+
+    char line[1024];
+    if (fgets(line, sizeof(line), stdin) == NULL) { fputc('\n', stderr); break; }
+    size_t ll = strlen(line);
+    if (ll > 0 && line[ll - 1] == '\n') line[--ll] = '\0';
+
+    string sline = string__new(line);
+    set_variable(variable_table, _SLIT("REPLY"), sline, VAR_STRING, false);
+    if (ll == 0) { string__free(sline); show_menu = true; continue; }
+
+    long long sel = 0;
+    StrconvResult sr = ratoll(sline, &sel);
+    string__free(sline);
+
+    string name_val = (!sr.is_err && sel >= 1 && sel <= (long long)items.size)
+                          ? string__from(*(string*)array_get(items, (size_t)(sel - 1)))
+                          : string__new("");
+    set_variable(variable_table, node->u.for_loop.name, name_val, VAR_STRING, false);
+    string__free(name_val);
+
+    IntResult r = execute_node(node->u.for_loop.body, result);
+    if (r.is_err) { loop_depth--; free_loop_items(&items); return r; }
+    if (consume_loop_flow()) break;
+  }
+  loop_depth--;
+  free_loop_items(&items);
+  return Ok(NULL);
+}
+
+static IntResult run_funcdef(Node* node, int* result) {
+  define_function(node->u.funcdef.name, node->u.funcdef.body);
+  *result = 0;
   return Ok(NULL);
 }
 
 IntResult execute_node(Node* node, int* result) {
   if (node == NULL) return Ok(NULL);
+  IntResult r = Ok(NULL);
   switch (node->type) {
-    case NODE_LIST:     return run_list(node, result);
-    case NODE_AND_OR:   return run_and_or(node, result);
-    case NODE_PIPELINE: return run_pipeline(node, result);
-    case NODE_SIMPLE:   return run_simple(node, result);
-    case NODE_SUBSHELL: return run_subshell(node, result);
-    case NODE_GROUP:    return run_group(node, result);
+    case NODE_LIST:      r = run_list(node, result); break;
+    case NODE_AND_OR:    r = run_and_or(node, result); break;
+    case NODE_PIPELINE:  r = run_pipeline(node, result); break;
+    case NODE_SIMPLE:    r = run_simple(node, result); break;
+    case NODE_SUBSHELL:  r = run_subshell(node, result); break;
+    case NODE_GROUP:     r = run_group(node, result); break;
+    case NODE_IF:        r = run_if(node, result); break;
+    case NODE_FOR:       r = run_for(node, result); break;
+    case NODE_FOR_ARITH: r = run_for_arith(node, result); break;
+    case NODE_WHILE:     r = run_while(node, result); break;
+    case NODE_CASE:      r = run_case(node, result); break;
+    case NODE_SELECT:    r = run_select(node, result); break;
+    case NODE_ARITH:     r = run_arith_cmd(node, result); break;
+    case NODE_COND:      r = run_cond(node, result); break;
+    case NODE_FUNCDEF:   r = run_funcdef(node, result); break;
+    case NODE_REDIR:     r = run_group(node, result); break;
   }
-  return Ok(NULL);
+  /* Track the most recent command status so "$?" reflects it mid-line. */
+  if (!r.is_err) shell_last_status = *result;
+  return r;
 }
 
 IntResult parse_and_execute(const string input, int* result) {

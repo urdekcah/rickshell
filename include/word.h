@@ -1,9 +1,3 @@
-#ifndef __RICKSHELL_WORD_H__
-#define __RICKSHELL_WORD_H__
-#include <stdbool.h>
-#include <stddef.h>
-#include "rstring.h"
-
 /*
  * word.h — Pre-expansion representation of a single shell word.
  *
@@ -15,6 +9,11 @@
  * distinction between '$x' (literal) and "$x" (expanded), which is the whole
  * reason this type exists.
  */
+#ifndef __RICKSHELL_WORD_H__
+#define __RICKSHELL_WORD_H__
+#include <stdbool.h>
+#include <stddef.h>
+#include "rstring.h"
 
 /**
  * @brief Kind of a word segment, which selects how the segment is expanded.
@@ -63,6 +62,16 @@ Word* word_new(void);
  * @param[in] w  Word to free. NULL is a no-op.
  */
 void word_free(Word* w);
+
+/**
+ * @brief Deep-copies a word and every segment it owns.
+ *
+ * The copy shares no memory with @p w and may be freed independently.
+ *
+ * @param[in] w  Word to copy. NULL yields NULL.
+ * @return Owned copy. Free with word_free().
+ */
+Word* word_clone(const Word* w);
 
 /**
  * @brief Appends a segment to a word, taking ownership of @p text.

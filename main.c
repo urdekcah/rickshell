@@ -48,7 +48,7 @@ int main(void) {
 
     if (string__is_null_or_empty(input)) {
       string__free(input);
-      if (feof(stdin)) {
+      if (feof(stdin) || input_eof) {
         println(_SLIT0);
         println(_SLIT("exit"));
         break;

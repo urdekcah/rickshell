@@ -9,6 +9,14 @@
 #include "ast.h"
 
 /**
+ * @brief Exit status of the most recently executed command (the value of "$?").
+ *
+ * Maintained by the executor as it finishes each command so the value is current
+ * within a multi-command line. Read-only for callers outside the executor.
+ */
+extern int shell_last_status;
+
+/**
  * @brief Parses one input line and executes the resulting program.
  *
  * Lexes, parses, and walks the syntax tree. A syntax error is reported to the

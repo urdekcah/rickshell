@@ -4,6 +4,8 @@
 #include <readline/readline.h>
 #include <readline/history.h>
 #include "variable.h"
+#include "function.h"
+#include "param.h"
 #include "log.h"
 #include "file.h"
 #include "io.h"
@@ -101,6 +103,8 @@ void init_rickshell() {
   parse_path();
   rl_redisplay_function = rick__redisplay_function;
   init_variables();
+  init_functions();
+  params_init();
   initialize_history();
   last_cmd = get_last_command();
   LogConfig config = {
@@ -118,6 +122,8 @@ void init_rickshell() {
 }
 
 void cleanup_rickshell() {
+  cleanup_functions();
+  params_cleanup();
   cleanup_variables();
   log_info("Shell exited");
   log_shutdown();

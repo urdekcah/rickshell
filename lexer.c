@@ -73,6 +73,14 @@ static void set_error(Lexer* lx, const char* msg) {
   }
 }
 
+/* Records an error caused by end of input inside an unterminated construct. The
+ * incomplete flag lets an interactive caller keep reading more input instead of
+ * reporting a syntax error. */
+static void set_unterminated(Lexer* lx, const char* msg) {
+  set_error(lx, msg);
+  lx->incomplete = true;
+}
+
 /* ---- literal-run accumulator ----
  *
  * Adjacent literal characters of the same quoting context are coalesced into a
@@ -141,7 +149,7 @@ static bool read_backtick(Lexer* lx, Word* w, bool quoted) {
   }
   if (c == '\0') {
     string_builder__free(&sb);
-    set_error(lx, "unterminated `...` command substitution");
+    set_unterminated(lx, "unterminated `...` command substitution");
     return false;
   }
   adv(lx);  /* consume closing backtick */
@@ -175,7 +183,7 @@ static bool read_braced_param(Lexer* lx, Word* w, bool quoted) {
   }
   if (depth != 0) {
     string_builder__free(&sb);
-    set_error(lx, "unterminated ${...} expansion");
+    set_unterminated(lx, "unterminated ${...} expansion");
     return false;
   }
   string text = string_builder__to_string(&sb);
@@ -184,7 +192,8 @@ static bool read_braced_param(Lexer* lx, Word* w, bool quoted) {
   return true;
 }
 
-/* $((...)): the inner expression is stored without the "$((" / "))" markers. */
+/* "$((...))" and the "((...))" command share this reader: the inner expression
+ * is stored without the "((" / "))" markers, with parentheses balanced. */
 static bool read_arith(Lexer* lx, Word* w, bool quoted) {
   adv(lx);  /* consume first '(' */
   adv(lx);  /* consume second '(' */
@@ -194,7 +203,7 @@ static bool read_arith(Lexer* lx, Word* w, bool quoted) {
     char c = cur(lx);
     if (c == '\0') {
       string_builder__free(&sb);
-      set_error(lx, "unterminated $((...)) expansion");
+      set_unterminated(lx, "unterminated arithmetic expression");
       return false;
     }
     if (c == '(') {
@@ -216,7 +225,7 @@ static bool read_arith(Lexer* lx, Word* w, bool quoted) {
         break;
       }
       string_builder__free(&sb);
-      set_error(lx, "malformed $((...)) expansion");
+      set_error(lx, "malformed arithmetic expression");
       return false;
     }
     string_builder__append_char(&sb, c);
@@ -239,7 +248,7 @@ static bool read_cmdsub(Lexer* lx, Word* w, bool quoted) {
     char c = cur(lx);
     if (c == '\0') {
       string_builder__free(&sb);
-      set_error(lx, "unterminated $(...) command substitution");
+      set_unterminated(lx, "unterminated $(...) command substitution");
       return false;
     }
     if (c == '\'') {
@@ -373,7 +382,7 @@ static bool read_squote(Lexer* lx, Word* w) {
   }
   if (c == '\0') {
     string_builder__free(&sb);
-    set_error(lx, "unterminated ' quote");
+    set_unterminated(lx, "unterminated ' quote");
     return false;
   }
   adv(lx);  /* consume closing quote */
@@ -428,7 +437,7 @@ static bool read_dquote(Lexer* lx, Word* w) {
   }
   if (c == '\0') {
     litbuf_flush(w, &lb);
-    set_error(lx, "unterminated \" quote");
+    set_unterminated(lx, "unterminated \" quote");
     return false;
   }
   litbuf_flush(w, &lb);
@@ -529,6 +538,7 @@ void lexer_init(Lexer* lx, const char* src) {
   lx->len = strlen(src);
   lx->pos = 0;
   lx->error = false;
+  lx->incomplete = false;
   lx->errmsg = _SLIT0;
 }
 
@@ -574,9 +584,27 @@ bool lexer_next(Lexer* lx, Token* out) {
       return true;
     case ';':
       adv(lx);
-      out->type = TOK_SEMI;
+      if (cur(lx) == ';') {
+        adv(lx);
+        if (cur(lx) == '&') { adv(lx); out->type = TOK_DSEMI_AMP; }
+        else out->type = TOK_DSEMI;
+      } else if (cur(lx) == '&') {
+        adv(lx);
+        out->type = TOK_SEMI_AMP;
+      } else {
+        out->type = TOK_SEMI;
+      }
       return true;
     case '(':
+      /* "((" introduces the arithmetic command; a nested subshell must be
+       * written "( (" with a space, matching the usual shell disambiguation. */
+      if (at(lx, 1) == '(') {
+        Word* w = word_new();
+        if (!read_arith(lx, w, false)) { word_free(w); return false; }
+        out->type = TOK_ARITH;
+        out->word = w;
+        return true;
+      }
       adv(lx);
       out->type = TOK_LPAREN;
       return true;
@@ -615,7 +643,7 @@ bool lexer_next(Lexer* lx, Token* out) {
 }
 
 void token_free(Token* t) {
-  if (t->type == TOK_WORD && t->word != NULL) word_free(t->word);
+  if (t->word != NULL) word_free(t->word);
   t->type = TOK_EOF;
   t->word = NULL;
   t->io_number = 0;

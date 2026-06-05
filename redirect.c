@@ -24,7 +24,9 @@ IntResult handle_redirection(Command* cmd) {
           string emsg = string__new(msg);
           return Err(emsg, ERRCODE_EXEC_REDIRECT_FAILED);
         }
-        if (dup2(fd, STDIN_FILENO) == -1) {
+        /* redir->fd is the explicit left-hand descriptor (0 by default for
+         * input), so "3<file" targets fd 3 rather than always stdin. */
+        if (dup2(fd, redir->fd) == -1) {
           char* msg = strerror(errno);
           string emsg = string__new(msg);
           close(fd);
@@ -40,7 +42,9 @@ IntResult handle_redirection(Command* cmd) {
           string emsg = string__new(msg);
           return Err(emsg, ERRCODE_EXEC_REDIRECT_FAILED);
         }
-        if (dup2(fd, STDOUT_FILENO) == -1) {
+        /* Target the explicit descriptor (1 by default), so "2>file" goes to
+         * stderr rather than always stdout. */
+        if (dup2(fd, redir->fd) == -1) {
           char* msg = strerror(errno);
           string emsg = string__new(msg);
           close(fd);
@@ -56,7 +60,9 @@ IntResult handle_redirection(Command* cmd) {
           string emsg = string__new(msg);
           return Err(emsg, ERRCODE_EXEC_REDIRECT_FAILED);
         }
-        if (dup2(fd, STDOUT_FILENO) == -1) {
+        /* Target the explicit descriptor (1 by default), so "2>>file" appends to
+         * stderr rather than always stdout. */
+        if (dup2(fd, redir->fd) == -1) {
           char* msg = strerror(errno);
           string emsg = string__new(msg);
           close(fd);

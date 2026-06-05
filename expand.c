@@ -17,9 +17,12 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include <unistd.h>
 #include <pwd.h>
 #include <glob.h>
+#include <fnmatch.h>
+#include <regex.h>
 #include "expand.h"
 #include "word.h"
 #include "rstring.h"
@@ -75,11 +78,13 @@ static void ebuf_append(EBuf* e, const char* s, size_t n, bool splittable, bool 
   e->buf[e->len] = '\0';
 }
 
-/* ---- arithmetic evaluation ($(( ... ))) ----
+/* ---- arithmetic evaluation ($(( )), (( )), for ((;;))) ----
  *
  * A small precedence-climbing evaluator over signed 64-bit integers. Bare
  * identifiers resolve to variables; an unset or non-numeric variable reads as 0.
- * Any syntax error or division by zero sets ok = false and the result is 0.
+ * Assignment (= and the compound forms), pre/post-increment and -decrement, and
+ * the comma operator write results back through set_variable(). Any syntax error
+ * or division by zero sets ok = false and the result is 0.
  */
 
 typedef struct {
@@ -111,6 +116,56 @@ static long long arith_lookup(Arith* a, const char* name, size_t len) {
   long long val = strtoll(v->str.str, &end, 0);
   if (end == v->str.str) return 0;
   return val;
+}
+
+/* Writes @p val to the named variable as a decimal string. */
+static void arith_set(Arith* a, const char* name, long long val) {
+  string key = string__new(name);
+  char vbuf[32];
+  int wn = snprintf(vbuf, sizeof(vbuf), "%lld", val);
+  string vs = string__new(wn > 0 ? vbuf : "0");
+  set_variable(a->table, key, vs, VAR_STRING, false);
+  string__free(key);
+  string__free(vs);
+}
+
+/* Reads an identifier at the cursor into @p buf and advances past it. Returns
+ * the name length, or 0 when the cursor is not on an identifier (cursor kept).
+ * A name longer than the buffer sets ok = false and returns 0. */
+static size_t arith_read_name(Arith* a, char* buf, size_t bufsz) {
+  arith_ws(a);
+  size_t start = a->i;
+  if (!(a->i < a->n && (a->s[a->i] == '_' || isalpha((unsigned char)a->s[a->i]))))
+    return 0;
+  while (a->i < a->n) {
+    char d = a->s[a->i];
+    if (d == '_' || isalnum((unsigned char)d)) a->i++;
+    else break;
+  }
+  size_t len = a->i - start;
+  if (len >= bufsz) { a->ok = false; return 0; }
+  memcpy(buf, a->s + start, len);
+  buf[len] = '\0';
+  return len;
+}
+
+/* Recognizes an assignment operator at the cursor without consuming it. Sets
+ * @p kind to a one-character tag ('=', '+', '-', '*', '/', '%', '&', '^', '|',
+ * 'L' for "<<=", 'R' for ">>=") and returns the operator length in bytes, or 0
+ * when the cursor is not on an assignment operator. */
+static int arith_assign_op(const Arith* a, char* kind) {
+  char c0 = (a->i < a->n) ? a->s[a->i] : '\0';
+  char c1 = (a->i + 1 < a->n) ? a->s[a->i + 1] : '\0';
+  char c2 = (a->i + 2 < a->n) ? a->s[a->i + 2] : '\0';
+  if (c0 == '<' && c1 == '<' && c2 == '=') { *kind = 'L'; return 3; }
+  if (c0 == '>' && c1 == '>' && c2 == '=') { *kind = 'R'; return 3; }
+  if (c1 == '=' && (c0 == '+' || c0 == '-' || c0 == '*' || c0 == '/' ||
+                    c0 == '%' || c0 == '&' || c0 == '^' || c0 == '|')) {
+    *kind = c0;
+    return 2;
+  }
+  if (c0 == '=' && c1 != '=') { *kind = '='; return 1; }
+  return 0;
 }
 
 static long long arith_primary(Arith* a) {
@@ -156,14 +211,45 @@ static long long arith_primary(Arith* a) {
   return 0;
 }
 
+/* Postfix "++"/"--". Reads the lvalue itself, restoring the cursor when no
+ * postfix operator follows so the bare identifier still reaches arith_primary. */
+static long long arith_postfix(Arith* a) {
+  arith_ws(a);
+  size_t save = a->i;
+  char name[256];
+  size_t nlen = arith_read_name(a, name, sizeof(name));
+  if (nlen > 0) {
+    arith_ws(a);
+    char c = arith_peek(a);
+    if ((c == '+' || c == '-') && a->i + 1 < a->n && a->s[a->i + 1] == c) {
+      a->i += 2;
+      long long old = arith_lookup(a, name, nlen);
+      arith_set(a, name, (c == '+') ? old + 1 : old - 1);
+      return old;
+    }
+    a->i = save;  /* a plain identifier; let arith_primary read its value */
+  }
+  return arith_primary(a);
+}
+
 static long long arith_unary(Arith* a) {
   arith_ws(a);
   char c = arith_peek(a);
+  if ((c == '+' || c == '-') && a->i + 1 < a->n && a->s[a->i + 1] == c) {
+    a->i += 2;
+    char name[256];
+    size_t nlen = arith_read_name(a, name, sizeof(name));
+    if (nlen == 0) { a->ok = false; return 0; }
+    long long v = (c == '+') ? arith_lookup(a, name, nlen) + 1
+                             : arith_lookup(a, name, nlen) - 1;
+    arith_set(a, name, v);
+    return v;
+  }
   if (c == '-') { a->i++; return -arith_unary(a); }
   if (c == '+') { a->i++; return arith_unary(a); }
   if (c == '!') { a->i++; return !arith_unary(a); }
   if (c == '~') { a->i++; return ~arith_unary(a); }
-  return arith_primary(a);
+  return arith_postfix(a);
 }
 
 static long long arith_mul(Arith* a) {
@@ -290,8 +376,57 @@ static long long arith_lor(Arith* a) {
   return v;
 }
 
-static long long arith_expr(Arith* a) {
+/* Assignment, including the compound forms. Right-associative; the left side
+ * must be a bare identifier. A leading identifier that is not followed by an
+ * assignment operator is rewound and parsed as an ordinary expression. */
+static long long arith_assign(Arith* a) {
+  arith_ws(a);
+  size_t save = a->i;
+  char name[256];
+  size_t nlen = arith_read_name(a, name, sizeof(name));
+  if (nlen > 0) {
+    arith_ws(a);
+    char kind = 0;
+    int oplen = arith_assign_op(a, &kind);
+    if (oplen > 0) {
+      a->i += (size_t)oplen;
+      long long rhs = arith_assign(a);
+      long long cur = arith_lookup(a, name, nlen);
+      long long nv = rhs;
+      switch (kind) {
+        case '=': nv = rhs; break;
+        case '+': nv = cur + rhs; break;
+        case '-': nv = cur - rhs; break;
+        case '*': nv = cur * rhs; break;
+        case '/': if (rhs == 0) { a->ok = false; return 0; } nv = cur / rhs; break;
+        case '%': if (rhs == 0) { a->ok = false; return 0; } nv = cur % rhs; break;
+        case '&': nv = cur & rhs; break;
+        case '^': nv = cur ^ rhs; break;
+        case '|': nv = cur | rhs; break;
+        case 'L': nv = cur << rhs; break;
+        case 'R': nv = cur >> rhs; break;
+        default: break;
+      }
+      arith_set(a, name, nv);
+      return nv;
+    }
+  }
+  a->i = save;
   return arith_lor(a);
+}
+
+static long long arith_comma(Arith* a) {
+  long long v = arith_assign(a);
+  for (;;) {
+    arith_ws(a);
+    if (arith_peek(a) == ',') { a->i++; v = arith_assign(a); }
+    else break;
+  }
+  return v;
+}
+
+static long long arith_expr(Arith* a) {
+  return arith_comma(a);
 }
 
 /* Evaluates an arithmetic source string (after parameter expansion). */
@@ -558,12 +693,65 @@ StringArray expand_word_to_fields(VariableTable* table, const Word* w) {
   return out;
 }
 
+/* Runs every expansion stage of a word into @p e, short of field splitting and
+ * globbing, leaving the per-byte glob-eligibility track intact for callers that
+ * need it (string joining and pattern matching). */
+static void expand_word_into(VariableTable* table, const Word* w, EBuf* e) {
+  for (size_t i = 0; i < w->size; i++)
+    emit_segment(e, table, &w->data[i], i == 0);
+}
+
 string expand_word_to_string(VariableTable* table, const Word* w) {
   EBuf e;
   ebuf_init(&e);
-  for (size_t i = 0; i < w->size; i++)
-    emit_segment(&e, table, &w->data[i], i == 0);
+  expand_word_into(table, w, &e);
   string r = (e.len == 0) ? string__new("") : string_from_range(&e, 0, e.len);
   ebuf_free(&e);
   return r;
+}
+
+bool expand_arith(VariableTable* table, const string expr, long long* out) {
+  bool ok = true;
+  long long v = arith_eval(table, expr, &ok);
+  *out = ok ? v : 0;
+  return ok;
+}
+
+/* Renders an expanded word as an fnmatch(3) pattern: unquoted '*', '?', and '['
+ * stay active; the same characters when quoted, and any backslash, are escaped
+ * so they match literally. Bracket-expression bodies pass through unchanged. */
+static string ebuf_to_pattern(const EBuf* e) {
+  StringBuilder sb = string_builder__new();
+  for (size_t i = 0; i < e->len; i++) {
+    char c = e->buf[i];
+    bool meta = (c == '*' || c == '?' || c == '[');
+    if (meta && e->globbable[i]) {
+      string_builder__append_char(&sb, c);
+    } else {
+      if (meta || c == '\\') string_builder__append_char(&sb, '\\');
+      string_builder__append_char(&sb, c);
+    }
+  }
+  string r = string_builder__to_string(&sb);
+  string_builder__free(&sb);
+  return r;
+}
+
+bool expand_pattern_match(VariableTable* table, const string subject, const Word* pattern) {
+  EBuf e;
+  ebuf_init(&e);
+  expand_word_into(table, pattern, &e);
+  string pat = ebuf_to_pattern(&e);
+  ebuf_free(&e);
+  int rc = fnmatch(pat.str, subject.str, 0);
+  string__free(pat);
+  return rc == 0;
+}
+
+bool expand_regex_match(const string subject, const string regex) {
+  regex_t re;
+  if (regcomp(&re, regex.str, REG_EXTENDED | REG_NOSUB) != 0) return false;
+  int rc = regexec(&re, subject.str, 0, NULL, 0);
+  regfree(&re);
+  return rc == 0;
 }

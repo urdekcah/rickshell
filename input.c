@@ -19,6 +19,7 @@
 #include "result.h"
 #include "rstring.h"
 #include "builtin.h"
+#include "parser.h"
 #include "file.h"
 #include "io.h"
 
@@ -29,6 +30,7 @@ extern char *path_dirs[MAX_PATH_DIRS];
 extern int path_dir_count;
 string prompt = _SLIT0;
 size_t prompt_len = 0;
+bool input_eof = false;
 
 static int is_command_char(char c) {
   return isalnum(c) || c == '_' || c == '-' || c == '.';
@@ -98,10 +100,40 @@ void rick__redisplay_function(void) {
 string get_input(void) {
   prompt = get_prompt();
   char* raw_input = readline(prompt.str);
-  string input = string__new(raw_input);
-  free(raw_input);
   string__free(prompt);
   prompt = _SLIT0;
+  if (raw_input == NULL) {
+    input_eof = true;  /* the line editor hit end of input */
+    return _SLIT0;
+  }
+
+  string input = string__new(raw_input);
+  free(raw_input);
+
+  /* Keep reading continuation lines while the accumulated command is
+   * syntactically unterminated (an open quote, expansion, or compound command).
+   * End-of-input during continuation stops here and lets the parser report the
+   * unterminated construct. */
+  while (parse_input_incomplete(input.str)) {
+    prompt = _SLIT("> ");
+    prompt_len = 2;
+    char* cont = readline(prompt.str);
+    prompt = _SLIT0;
+    prompt_len = 0;
+    if (cont == NULL) {
+      input_eof = true;  /* end of input before the construct was completed */
+      break;
+    }
+
+    string with_nl = string__concat(input, _SLIT("\n"));
+    string__free(input);
+    string cont_line = string__new(cont);
+    free(cont);
+    input = string__concat(with_nl, cont_line);
+    string__free(with_nl);
+    string__free(cont_line);
+  }
+
   return input;
 }
 

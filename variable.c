@@ -3,6 +3,7 @@
 #include <string.h>
 #include <ctype.h>
 #include "variable.h"
+#include "param.h"
 #include "memory.h"
 #include "io.h"
 #include "error.h"
@@ -957,12 +958,34 @@ string expand_variables(VariableTable* table, const string input) {
         }
       } else if (p + 1 < (ssize_t)input.len && input.str[p + 1] == '?') {
         char exit_status[20];
-        snprintf(exit_status, sizeof(exit_status), "%d", WEXITSTATUS(system(NULL)));
+        snprintf(exit_status, sizeof(exit_status), "%d", shell_last_status);
         string_builder__append_cstr(&sb, exit_status);
         p += 2;
         continue;
       } else if (p + 1 < (ssize_t)input.len && input.str[p + 1] == '!') {
         string_builder__append_cstr(&sb, "LAST_BG_PID");
+        p += 2;
+        continue;
+      } else if (p + 1 < (ssize_t)input.len &&
+                 input.str[p + 1] >= '0' && input.str[p + 1] <= '9') {
+        /* Single-digit positional parameter; ${10} and beyond use the braced form. */
+        size_t idx = (size_t)(input.str[p + 1] - '0');
+        string val = params_get(idx);
+        string_builder__append(&sb, val);
+        string__free(val);
+        p += 2;
+        continue;
+      } else if (p + 1 < (ssize_t)input.len && input.str[p + 1] == '#') {
+        char count_str[20];
+        snprintf(count_str, sizeof(count_str), "%zu", params_count());
+        string_builder__append_cstr(&sb, count_str);
+        p += 2;
+        continue;
+      } else if (p + 1 < (ssize_t)input.len &&
+                 (input.str[p + 1] == '@' || input.str[p + 1] == '*')) {
+        string joined = params_join(' ');
+        string_builder__append(&sb, joined);
+        string__free(joined);
         p += 2;
         continue;
       } else if (p + 1 < (ssize_t)input.len && (isalpha(input.str[p + 1]) || input.str[p + 1] == '_')) {

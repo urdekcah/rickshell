@@ -30,6 +30,14 @@ void word_free(Word* w) {
   rfree(w);
 }
 
+Word* word_clone(const Word* w) {
+  if (w == NULL) return NULL;
+  Word* copy = word_new();
+  for (size_t i = 0; i < w->size; i++)
+    word_push(copy, w->data[i].kind, string__from(w->data[i].text), w->data[i].quoted);
+  return copy;
+}
+
 void word_push(Word* w, SegKind kind, string text, bool quoted) {
   if (w->size == w->cap) {
     size_t new_cap = (w->cap == 0) ? WORD_INITIAL_CAP : w->cap * 2;
