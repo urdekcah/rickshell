@@ -5,6 +5,7 @@
 #include <ctype.h>
 #include <fcntl.h>
 #include <sys/wait.h>
+#include <signal.h>
 #include <errno.h>
 #include "expr.h"
 #include "builtin.h"
@@ -176,6 +177,10 @@ IntResult execute_command(Command* cmd, int* result) {
   if (*result != -1)
     return Ok(NULL);
 
+  /* Run external foreground commands in their own process group and hand them
+   * the controlling terminal, so a terminal-generated SIGINT (Ctrl-C) is
+   * delivered to the command -- not to the shell. */
+  int fg = job_control_active();
   pid_t pid = fork();
   if (pid == -1) {
     return Err(
@@ -183,6 +188,11 @@ IntResult execute_command(Command* cmd, int* result) {
       ERRCODE_EXEC_FORK_FAILED
     );
   } else if (pid == 0) {
+    if (fg) {
+      setpgid(0, 0);
+      give_terminal_to(getpid());
+    }
+    reset_child_signals();
     Result r = handle_redirection(cmd);
     if (r.is_err) {
       report_error(r);
@@ -193,20 +203,35 @@ IntResult execute_command(Command* cmd, int* result) {
     print_error(_SLIT("Execvp failed"));
     _exit(EXIT_FAILURE);
   } else {
+    /* Mirror setpgid()/tcsetpgrp() in the parent too, so the group and terminal
+     * ownership are established regardless of which process is scheduled first. */
+    if (fg) {
+      setpgid(pid, pid);
+      give_terminal_to(pid);
+    }
     int status;
     if (waitpid(pid, &status, 0) == -1) {
+      if (fg) reclaim_terminal();
       return Err(
         _SLIT("Waitpid failed"),
         ERRCODE_EXEC_WAIT_FAILED
       );
     }
+    if (fg) reclaim_terminal();
 
     if (WIFEXITED(status)) {
       *result = WEXITSTATUS(status);
       return Ok(NULL);
     } else if (WIFSIGNALED(status)) {
-      ffprintln(stderr, "Command terminated by signal %d", WTERMSIG(status));
-      *result = 128 + WTERMSIG(status);
+      int sig = WTERMSIG(status);
+      if (sig == SIGINT) {
+        /* Ctrl-C: the tty already echoed "^C"; just start a clean line. */
+        ssize_t w = write(STDOUT_FILENO, "\n", 1);
+        (void)w;
+      } else {
+        ffprintln(stderr, "Command terminated by signal %d", sig);
+      }
+      *result = 128 + sig;
       return Ok(NULL);
     }
   }

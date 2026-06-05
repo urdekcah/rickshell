@@ -19,6 +19,25 @@ typedef struct {
   int next_job_id;
 } JobList;
 
+/* Interactive shell job-control setup. Must be called once at start-up,
+ * before any signal dispositions are changed (it relies on the default
+ * SIGTTIN action while it moves the shell into the foreground). */
+void init_shell(void);
+/* True when stdin is a terminal and job control is available. */
+int shell_is_interactive(void);
+/* True only in the interactive shell process while it is the foreground job
+ * driver (i.e. not inside a forked background child). Decides whether a child
+ * should be placed in its own process group and handed the terminal. */
+int job_control_active(void);
+/* Hand the controlling terminal to process group PGID / take it back. Safe to
+ * call from both the parent and the just-forked child (no-op when the shell is
+ * not interactive). */
+void give_terminal_to(pid_t pgid);
+void reclaim_terminal(void);
+/* Restore default dispositions for the signals the shell catches/ignores, to
+ * be called in a forked child after fork() and before exec(). */
+void reset_child_signals(void);
+
 void init_job_list(void);
 Job* add_job(pid_t pgid, CommandList* cmds, const string command_line);
 void remove_job(Job* job);
